@@ -151,6 +151,24 @@ pio run -t upload       # flash over ST-Link (SWD: 3V3, GND, PA13 = SWDIO, PA14 
 pio device monitor      # read the reports from /dev/ttyACM0
 ```
 
+### USB permissions for the upload
+
+On Linux, `pio run -t upload` fails with `LIBUSB_ERROR_ACCESS` if your user
+cannot open the ST-Link device. Install a udev rule:
+
+```sh
+sudo tee /etc/udev/rules.d/60-stlink.rules >/dev/null <<'EOF'
+# ST-Link/V2 programmers: give the users group write access.
+SUBSYSTEMS=="usb", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="3748", MODE:="0660", GROUP:="users"
+EOF
+sudo udevadm control --reload && sudo udevadm trigger
+```
+
+Then unplug the ST-Link and plug it back in. The USB CDC serial port
+(`0483:5740`) usually needs no rule; if `pio device monitor` cannot open
+`/dev/ttyACM0`, add your user to the `uucp` group and log in again:
+`sudo usermod -aG uucp $USER`.
+
 No ST-Link and no stm32duino bootloader? The F103's ROM bootloader needs no
 extra hardware, but not over USB: wire a USB-serial adapter (3V3, GND, TX→PA10,
 RX→PA9), set `upload_protocol = serial` in `platformio.ini`, put the BOOT0
