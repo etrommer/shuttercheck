@@ -5,11 +5,17 @@ docs live in `README.md`; this file holds the build/flash commands, the
 invariants the firmware must not break, and the facts already verified against
 upstream sources so nobody has to re-derive them.
 
-The analog front end is a phototransistor emitter node sampled **directly by
-the MCU's ADC1** on a TIM3-triggered grid. There is no external comparator;
-edge times are interpolated from the sample stream. The invariants below exist
-because that move trades a 125 ns hardware latch for a 2 µs sample grid plus
-arithmetic — everything else is exactly as conservative as before.
+## Workflow
+
+- Every issue gets its own branch: create a branch from `main` for the issue,
+  do the work there, and push to that branch — never to `main`.
+- When the implementation is complete, open a Pull Request against `main`
+  referencing the issue.
+- Never merge into `main` directly; `main` only ever moves through PRs.
+- Write all text in ASD-STE100 Simplified Technical English: README,
+  AGENTS.md, issues, PRs, commit messages, code comments, and chat replies.
+  Keep sentences short. Use one meaning per sentence and per word. Prefer
+  the active voice. Use the STE100 approved lexicon where it exists.
 
 ## Layout intent
 
@@ -19,8 +25,14 @@ arithmetic — everything else is exactly as conservative as before.
   DMA1_Channel1 code plus the crossing-scan in the DMA half/transfer-complete
   handlers. Keep it in a separate translation unit from reporting so the scan
   timing stays obvious.
-- Not yet created: `src/` does not exist, so `pio run` currently reports
-  *nothing to build*. Do not add a placeholder sketch to silence that.
+
+## Tools (prefer OMP-native over shell)
+
+- Issues/PRs: read via `issue://<N>` / `pr://<N>`; use `gh` only for writes
+  (create/comment/close) — the native URLs are read-only.
+- Code intelligence: `lsp` (references/rename/code actions), `grep` tool, not
+  shell `grep`/`rg`/`find`.
+- Read files with `read` (supports line selectors); edit with `edit`.
 
 ## Commands
 
@@ -31,22 +43,6 @@ pio run -t clean
 pio device monitor           # read reports on the USB CDC port
 pio run -t upload -e blackpill_f103c8_128   # 128 KiB clone
 ```
-
-- PlatformIO is **not installed in this development environment** (`pio` is
-  absent, `~/.platformio` does not exist). Build/upload verification must run
-  where PlatformIO is installed; do not claim a build was verified from here.
-- SWD wiring: 3V3, GND, PA13 (SWDIO), PA14 (SWCLK), NRST. `debug_tool`
-  defaults to `stlink` from the board definition.
-- Without an ST-Link: `upload_protocol = serial` with a USB-serial adapter on
-  PA9/PA10, jumper BOOT0 = 1, reset, upload via the F103 ROM bootloader, then
-  BOOT0 = 0 + reset. `dfu` is NOT usable: `blackpill_f103c8`'s
-  `upload.protocols` is `jlink, cmsis-dap, stlink, blackmagic, serial` — no
-  `dfu`, no `mbed`. On the F103 the platform's `dfu` branch does not even use
-  the ROM bootloader: it runs `maple_upload` against the stm32duino bootloader
-  (`1EAF:0003`, flashed at 0x08002000), with `upload.boot_version` defaulting
-  to 2.
-- 128 KiB clones: `board = blackpill_f103c8_128`. Only the linker limit
-  differs; `LED_BUILTIN` is PB12 for both (see below).
 
 ## Verified environment facts
 
@@ -151,91 +147,11 @@ USB hardware: the F103 has **no internal D+ pull-up**; the board must fit
 10. **Feedback:** one short flash on **PB12** (`LED_BUILTIN` on the Black
     Pill; PC13 on a Blue Pill) per accepted sample; nothing on rejection.
 
-## Front end (analog)
-
-Sensor is an **SFH 309 FA** Si NPN phototransistor: collector to 3V3, emitter
-via `R_E` = 1 kΩ to GND (node A), node A through **100 Ω series** into
-**PA1 = ADC1_IN1**. The emitter follower is non-inverting, so the firmware's
-polarity convention holds as long as the sensor is wired collector-to-3V3.
-There is no comparator, no reference divider, and no adjustable threshold
-anywhere in the analog path — if you find yourself adding one, you are
-reverting the design decision, not fixing a bug.
-
-- Datasheet numbers that drive the error budget: I_PCE 400…5000 µA over the
-  bins at λ = 950 nm, E_e = 0.5 mW/cm², V_CE = 5 V; t_r/t_f 5…9 µs by bin at
-  I_C = 1 mA, V_CC = 5 V, R_L = 1 kΩ; V_CEsat 200 mV; dark current 1 nA typ;
-  spectral range 730…1120 nm, peak 900 nm; half angle ±12°.
-- Keep the emitter plateau at 0.3…1 V. Saturation (node near 3V3) stores base
-  charge and delays turn-off, which shows up as fast exposures reading *long*
-  — and as `clipped`, because the ADC sees the top of the range. That is a
-  light-level problem, not something the firmware may compensate for or clamp.
-- The 100 Ω series resistor is a requirement, not a nicety: it isolates the
-  ADC's sampling-charge kick and limits fault current into a pin that is not
-  5 V tolerant in analog mode. Keep total source impedance ≤ ~1.2 kΩ so the
-  7.5-cycle sample time remains inside the datasheet accuracy spec.
-- If a pin capacitor is fitted for HF noise it must be **≤ 1 nF**. With
-  `R_E` = 1 kΩ, a habitual 100 nF bypass makes a 100 µs RC that smears a
-  250 µs pulse into mush. 1 nF adds ~1 µs symmetrically to both edges.
-- Below ~40 mV of plateau span (`weak`) the midpoint is noise: 1 LSB = 0.8 mV
-  and real ENOB is ~9–10 bits. Dim-light behaviour is a light-level problem
-  too; do not lower the rejection threshold to "make it work".
-- At 1/4000 the dominant error is optical (slit width vs. chip size), not the
-  sampling chain. Do not chase it in code.
-
-## Conflicting peripherals
-
-`variant_PILL_F103Cx.h` reserves `TIMER_TONE = TIM3` and `TIMER_SERVO = TIM2`,
-`SERIAL_UART_INSTANCE = 1` (PA9/PA10), SPI on PA5-PA7, I2C on PB6/PB7.
-
-- **TIM3 is the sample clock.** `tone()` reconfigures TIM3's PSC/ARR and would
-  silently destroy the 2 µs grid — never call it. Same for anything else that
-  touches TIM3.
-- **ADC1 and PA1 are the capture input.** Never call `analogRead()` (the
-  framework reconfigures the ADC for polled single conversion and drops the
-  TRGO trigger), and never reconfigure ADC1/DMA1_Channel1 from sketch code.
-  PA1 carries only the sensor path; it must not also be used by anything else.
-- TIM2 (`TIMER_SERVO`) stays unused: the Servo library is not linked.
-- PA9/PA10 stay free: use them if a UART debug channel is ever wanted.
-- PA11/PA12 are the USB pins; never reuse them for the front end.
-- `LED_BUILTIN` = PB12 on this board. PB12 is not the bootloader strap
-  (BOOT1 = PB2) and is not used by any peripheral above, so it is free for the
-  feedback flash; only the LED may hang off it.
-
 ## Verification policy
 
-Firmware behaviour is verified **on hardware**, not by a host test suite:
+For simple functionality like successful compilation, properly implemeneted arithmetic and other hardware-independent functionality, use CI and unit tests.
 
-```sh
-pio run -t upload && pio device monitor
-# fire the shutter, check the printed number against the dial setting
-```
+Complex functionality that depends on hardware should be validated _on hardware_. Check the availability of a suitable board and stop and request how to proceed if none is detected.
 
-For a known reference without a camera, inject a 3.3 V pulse into node A (or
-into PA1 **through ≥100 Ω series**) from a function generator or a second MCU:
-verify 1/1000 and, if the source can do it, ~250 µs against the generator's
-own width. Exercise every rejection path deliberately: a falling-only pulse →
-`stale`; a long HIGH plateau near 3V3 → `clipped`; a low-amplitude pulse
-(< 40 mV span) → `weak`. Then sanity-check the interpolation: the reported
-width of a fixed-length pulse should stay stable as you sweep its length
-across ±2 µs — if it locks to multiples of the sample grid, something is
-reporting sample indices instead of interpolated times.
+always use a test-driven approach, where you define the expected outcome first, either verbally as part of an issue, or explicitly as a test case.
 
-If the crossing scan, threshold/plateau estimation or interpolation grows
-host-testable logic, add a PlatformIO `native` env and test it there rather
-than on the board.
-
-## Gotchas
-
-- `USBD_USE_CDC` without the PIO flag: see above.
-- Forgetting the ADC calibration sequence: conversions run, values look
-  plausible, absolute accuracy is garbage. See invariant 3.
-- 100 nF on PA1: see the front-end note; this bug *looks* like a slow shutter.
-- `Serial.flush()` on this core waits for the host to drain the CDC buffer; it
-  is not a no-op like on AVR.
-- The F103 ROM bootloader needs the HSE crystal and PA11/PA12, and after a
-  `serial` upload the BOOT0 jumper must go back to 0 or the firmware never
-  starts. It is reachable only over USART1 (PA9/PA10), never over USB: the
-  straight-through USB cable goes to the F103's own USB device controller, and
-  there is no ROM DFU there. Uploading over USB additionally needs the
-  stm32duino bootloader in flash (see the `dfu` note under Commands).
-- `#include "Wire.h"`/`SPI.h` reserve PB6/PB7 and PA5-PA7; avoid enabling them.
