@@ -7,11 +7,12 @@ both shutter edges are reconstructed from the sample stream by interpolation.
 No external comparator, no trimpot. The measured exposure is printed over USB
 CDC; any serial terminal reads it.
 
-> **Status: scaffolding only.** This repo currently contains `README.md`,
-> `AGENTS.md`, `platformio.ini` and `.gitignore`. The firmware is not written
-> yet, so `pio run` reports *nothing to build* until `src/` exists.
-> `AGENTS.md` holds the build/flash commands and the design invariants the
-> firmware has to satisfy.
+[![PlatformIO CI](https://github.com/etrommer/shuttercheck/actions/workflows/ci.yml/badge.svg)](https://github.com/etrommer/shuttercheck/actions/workflows/ci.yml)
+
+The firmware is a Hello World sketch at this time. It lights the LED and
+prints a line over USB CDC. The capture path is not written yet.
+`AGENTS.md` holds the build/flash commands and the design invariants the
+firmware must satisfy.
 
 ## How it measures
 
@@ -144,7 +145,8 @@ comparing it.
 Requires PlatformIO (`pipx install platformio`, or the VS Code extension).
 
 ```sh
-pio run                 # build (after src/ exists)
+pio run                 # build the default env, blackpill_f103c8
+pio run -e blackpill_f103c8_128   # build a 128 KiB clone
 pio run -t upload       # flash over ST-Link (SWD: 3V3, GND, PA13 = SWDIO, PA14 = SWCLK)
 pio device monitor      # read the reports from /dev/ttyACM0
 ```
