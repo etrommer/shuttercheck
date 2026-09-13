@@ -12,6 +12,8 @@ upstream sources so nobody has to re-derive them.
 - When the implementation is complete, open a Pull Request against `main`
   referencing the issue.
 - Never merge into `main` directly; `main` only ever moves through PRs.
+- When you write an issue for a new feature, and an implementation detail is
+  not clear, stop and ask. Do not start the work before the answer.
 - Write all text in ASD-STE100 Simplified Technical English: README,
   AGENTS.md, issues, PRs, commit messages, code comments, and chat replies.
   Keep sentences short. Use one meaning per sentence and per word. Prefer
@@ -21,10 +23,12 @@ upstream sources so nobody has to re-derive them.
 
 - `src/main.cpp` — Arduino `setup()`/`loop()`. Wiring, report formatting. No
   measurement arithmetic beyond unit conversion.
-- The capture path is bare-register TIM3 (sample clock, TRGO) + ADC1 +
-  DMA1_Channel1 code plus the crossing-scan in the DMA half/transfer-complete
-  handlers. Keep it in a separate translation unit from reporting so the scan
-  timing stays obvious.
+- The capture path is TIM3 (sample clock, TRGO) + ADC1 + DMA1_Channel1 code
+  plus the crossing-scan in the DMA half/transfer-complete handlers. Use the
+  STM32 HAL where possible (handles, `HAL_ADC_Start_DMA`, `HAL_TIM` base,
+  calibration, conversion callbacks). Go below the HAL only where the F1 HAL
+  does not reach, and say why in a comment. Keep it in a separate translation
+  unit from reporting so the scan timing stays obvious.
 
 ## Tools (prefer OMP-native over shell)
 
