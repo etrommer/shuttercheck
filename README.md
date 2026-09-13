@@ -21,10 +21,11 @@ firmware must satisfy.
    the transistor's current gain, so the emitter node swings by hundreds of mV
    under normal test light. The node drives **PA1 = ADC1_IN1** through a 100 Ω
    series resistor — that is the whole analog front end.
-2. **TIM3** runs on the 72 MHz APB1 timer clock with `PSC = 143`, `ARR = 0` and
+2. **TIM3** runs on the 72 MHz APB1 timer clock with `PSC = 71`, `ARR = 1` and
    `TRGO = update`, so it triggers one ADC conversion every exactly 144 ticks =
-   **2.000 µs**. The sampling instants are hardware events; no software can
-   shift them.
+   **2.000 µs**. Do not set `ARR = 0`: this timer then makes no periodic update
+   event, so the ADC gets no trigger at all. The sampling instants are hardware
+   events; no software can shift them.
 3. **ADC1 + DMA**: 12 MHz ADCCLK, 7.5-cycle sample + 12.5-cycle convert =
    1.67 µs per conversion, which fits inside the 2 µs trigger period. Every
    conversion is written into a circular DMA buffer by DMA — the stream is

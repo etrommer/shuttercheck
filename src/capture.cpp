@@ -51,12 +51,18 @@ void begin() {
   gpio.Mode = GPIO_MODE_ANALOG;
   HAL_GPIO_Init(GPIOA, &gpio);
 
-  // TIM3 counts at 72 MHz (APB1 x2). PSC = 143, ARR = 0 -> update every
-  // (143+1)x(0+1) ticks = exactly 2.000 us = 500 kS/s, no software jitter.
+  // TIM3 counts at 72 MHz (APB1 x2). PSC = 71, ARR = 1 -> update every
+  // (71+1)x(1+1) = 144 ticks = exactly 2.000 us = 500 kS/s, no software
+  // jitter.
+  //
+  // Do not use ARR = 0. With ARR = 0 this TIM3 does not generate a periodic
+  // update event, so TRGO gives no trigger and the ADC never converts.
+  // Measured on hardware: ARR = 0 gives one transfer per start, ARR = 1
+  // gives the full rate.
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 143;
+  htim3.Init.Prescaler = 71;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 0;
+  htim3.Init.Period = 1;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.RepetitionCounter = 0;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;

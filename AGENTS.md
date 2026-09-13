@@ -96,10 +96,12 @@ USB hardware: the F103 has **no internal D+ pull-up**; the board must fit
 
 1. **Timer-triggered sampling only.** Conversions are started by TIM3 TRGO
    (update events, ADC1 `EXTSEL = TIM3 TRGO`) and landed by DMA1_Channel1 in a
-   circular buffer. The sample clock is `PSC = 143`, `ARR = 0` at 72 MHz →
+   circular buffer. The sample clock is `PSC = 71`, `ARR = 1` at 72 MHz →
    exactly 2.000 µs per sample, and the grid has no software jitter. Never
-   measure an edge by code execution time, never poll the pin, never run the
-   ADC on a software loop or `analogRead()`.
+   set `ARR = 0`: this TIM3 then makes no periodic update event, TRGO gives no
+   trigger, and the ADC never converts. This is measured on hardware, not
+   theory. Never measure an edge by code execution time, never poll the pin,
+   never run the ADC on a software loop or `analogRead()`.
 2. **One fixed range, no state machine.** 500 kS/s covers the rated
    1/4000 … 6 s with ≥125 samples on the shortest pulse. Do not re-introduce
    prescaler ranges; do not add an `overflow` status — nothing overflows, and
