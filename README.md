@@ -9,11 +9,11 @@ sends the measured exposure over USB CDC. Any serial terminal can read it.
 
 [![PlatformIO CI](https://github.com/etrommer/shuttercheck/actions/workflows/ci.yml/badge.svg)](https://github.com/etrommer/shuttercheck/actions/workflows/ci.yml)
 
-The capture path operates at this time. The firmware samples PA1 on the
-timer-driven grid and sends the raw counts over USB CDC as `adc <counts>`
-lines, ten reports each second. The crossing scan and the shutter measurement
-are not written. Thus the firmware does not print the exposure. `AGENTS.md`
-holds the build and flash commands and the design invariants.
+The capture path and the crossing scan operate at this time. The firmware
+samples PA1 on the timer-driven 2 µs grid, rebuilds both shutter edges and
+sends the measured exposure over USB CDC as `<exposure ns> ok` lines.
+Rejections print `0 <status>`. `AGENTS.md` holds the build and flash commands
+and the design invariants.
 
 ## How it measures
 
