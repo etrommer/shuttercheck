@@ -1,10 +1,13 @@
 // Capture path: TIM3 (TRGO at 500 kS/s) drives ADC1; DMA1_Channel1 lands the
-// samples in a circular buffer of two halves. The crossing scan (a later
-// issue) runs in the DMA half/transfer-complete callbacks.
+// samples in a circular buffer of two halves. The crossing scan runs in the
+// DMA half/transfer-complete callbacks; finished measurements are published
+// through a result FIFO drained by loop().
 #ifndef SHUTTERCHECK_CAPTURE_H
 #define SHUTTERCHECK_CAPTURE_H
 
 #include <stdint.h>
+
+#include "scan.h"
 
 namespace capture {
 
@@ -17,10 +20,9 @@ constexpr uint32_t kSamplePeriodNs = 2000;
 // no conversion happens before it ends.
 void begin();
 
-// Snapshot of the newest finished buffer half. Returns false when no DMA
-// data has arrived yet. The pointer stays valid and stable: the DMA is
-// filling the other half while you read this one.
-bool newestHalf(const volatile uint16_t*& out);
+// Pops one finished measurement from the result FIFO. Returns false when the
+// FIFO is empty. Must run from loop() only, never from an ISR.
+bool nextResult(scan::Result* out);
 
 }  // namespace capture
 

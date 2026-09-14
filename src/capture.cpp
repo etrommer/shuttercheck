@@ -1,4 +1,7 @@
 // Capture path: TIM3 (TRGO) + ADC1 + DMA1_Channel1, through the STM32 HAL.
+// The whole file is firmware-only: the native unit-test build compiles it as
+// an empty translation unit and tests src/scan.cpp directly.
+#if defined(ARDUINO)
 #include "capture.h"
 
 #include <Arduino.h>
@@ -11,32 +14,37 @@ constexpr uint32_t kTotalSamples = 2 * kHalfSamples;
 
 volatile uint16_t buffer[kTotalSamples];
 
-// 0 = first half finished, 1 = second half finished. The ISR keeps the
-// newest finished half here; `newestHalf()` reads the other half, which the
-// DMA is not touching.
-volatile uint32_t newestHalfIndex = 2;  // 2 = nothing yet.
-
 ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
 TIM_HandleTypeDef htim3;
 
+// Crossing-scan state and result FIFO (issue 5). The scan runs in the DMA
+// callbacks on the newest finished half; loop() drains the FIFO.
+scan::State g_state;
+scan::ResultFifo g_fifo;
+
+void scanHalf(uint32_t idx) {
+  // idx 0 = first half finished (half-complete), 1 = second half (complete).
+  scan::scan(&buffer[idx * kHalfSamples], kHalfSamples, &g_state, &g_fifo);
+}
+
 }  // namespace
 
-// DMA1_Channel1 transfer/half-complete vector. The crossing scan (later
-// issue) belongs here; for now the callbacks only publish the finished half.
+// DMA1_Channel1 transfer/half-complete vector. The crossing scan runs here,
+// on the just-finished half, inside the interrupt (design invariant 7).
 extern "C" void DMA1_Channel1_IRQHandler(void) {
   HAL_DMA_IRQHandler(&hdma_adc1);
 }
 
 extern "C" void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc) {
   if (hadc == &hadc1) {
-    newestHalfIndex = 0;
+    scanHalf(0);
   }
 }
 
 extern "C" void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
   if (hadc == &hadc1) {
-    newestHalfIndex = 1;
+    scanHalf(1);
   }
 }
 
@@ -116,13 +124,7 @@ void begin() {
                     kTotalSamples);
 }
 
-bool newestHalf(const volatile uint16_t*& out) {
-  uint32_t idx = newestHalfIndex;
-  if (idx > 1) {
-    return false;
-  }
-  out = &buffer[(idx ^ 1U) * kHalfSamples];
-  return true;
-}
+bool nextResult(scan::Result* out) { return scan::fifoPop(&g_fifo, out); }
 
 }  // namespace capture
+#endif  // defined(ARDUINO)

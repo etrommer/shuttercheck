@@ -15,14 +15,22 @@ rules only: workflow, layout, commands, platform facts, invariants.
 - Write all text in ASD-STE100 Simplified Technical English: README, AGENTS.md,
   issues, PRs, commit messages, code comments, and chat replies. Keep
   sentences short, use the active voice, use the approved lexicon.
+- AGENTS.md are best practices and hints, not strict guidelines. If you believe
+  that instructions are not in line with best practices, a clean, efficient
+  implementation or the project's goals, stop and clarify. You as an agent may update
+  the AGENTS.md file when appropriate.
 
 ## Layout intent
 
 - `src/main.cpp` — Arduino `setup()`/`loop()`. Wiring, report formatting. No
   measurement arithmetic beyond unit conversion.
 - `src/capture.cpp` / `src/capture.h` — the capture path (timer sample clock,
-  ADC, DMA) and, in a later issue, the crossing scan. Keep it in a separate
-  translation unit from reporting, so the scan timing stays obvious.
+  ADC, DMA) and the DMA-callback hookup of the crossing scan.
+- `src/scan.cpp` / `src/scan.h` — the crossing scan, exposure measurement and
+  the result FIFO. Pure integer, stdint only, free of HAL and Arduino: the
+  native unit tests (`pio test -e native`) compile it directly, so it must
+  not pull in firmware-only headers. Keep it separate from reporting so the
+  scan timing stays obvious.
 - Use the STM32 HAL where possible. Go below the HAL only where the F1 HAL
   does not reach, and say why in a comment.
 

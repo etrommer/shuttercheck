@@ -1,11 +1,15 @@
-// shuttercheck — ADC driver: periodic readings over USB (issue 3).
+// shuttercheck — shutter edge scan and exposure reporting (issue 5).
 //
-// setup() starts the capture path (calibrated first) and loop() reports at
-// 10 Hz: one line per sample of the newest finished buffer half, then one
-// short LED flash on PB12. No measurement arithmetic happens here.
+// setup() starts the capture path (calibrated first). loop() drains the
+// result FIFO: an accepted pulse prints the exposure in nanoseconds, a
+// rejection prints a zero value, and an accepted sample flashes the LED
+// once. No measurement arithmetic happens here (design invariant 7: report
+// from loop() only).
+#if defined(ARDUINO)
 #include <Arduino.h>
 
 #include "capture.h"
+#include "scan.h"
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
@@ -13,28 +17,26 @@ void setup() {
   Serial.begin(115200);             // Serial == SerialUSB via the CDC flag.
 
   capture::begin();
-  Serial.println("shuttercheck adc stream");
+  Serial.println("shuttercheck exposure");
 }
 
 void loop() {
-  static uint32_t nextReportMs = 0;
-  uint32_t now = millis();
-  if (now < nextReportMs) {
-    return;
+  scan::Result r;
+  while (capture::nextResult(&r)) {
+    if (r.status == scan::Status::kOk) {
+      // "<exposure ns> ok"
+      Serial.print(r.exposureNs);
+      Serial.print(' ');
+      Serial.println(scan::statusName(r.status));
+      // One short flash per accepted sample; nothing on rejection.
+      digitalWrite(LED_BUILTIN, LOW);
+      delay(2);
+      digitalWrite(LED_BUILTIN, HIGH);
+    } else {
+      // "0 <status>" for the rejection paths.
+      Serial.print("0 ");
+      Serial.println(scan::statusName(r.status));
+    }
   }
-  nextReportMs = now + 100;  // Ten reports per second.
-
-  const volatile uint16_t* samples = nullptr;
-  if (!capture::newestHalf(samples)) {
-    return;  // No DMA data yet; print nothing.
-  }
-  for (uint32_t i = 0; i < capture::kHalfSamples; i++) {
-    Serial.print("adc ");
-    Serial.println(samples[i], DEC);
-  }
-
-  // One short flash per report, active-low PB12.
-  digitalWrite(LED_BUILTIN, LOW);
-  delay(2);
-  digitalWrite(LED_BUILTIN, HIGH);
 }
+#endif  // defined(ARDUINO)
