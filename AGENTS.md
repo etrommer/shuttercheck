@@ -25,7 +25,11 @@ rules only: workflow, layout, commands, platform facts, invariants.
 - `src/main.cpp` — Arduino `setup()`/`loop()`. Wiring, report formatting. No
   measurement arithmetic beyond unit conversion.
 - `src/capture.cpp` / `src/capture.h` — the capture path (timer sample clock,
-  ADC, DMA) and the DMA-callback hookup of the crossing scan.
+  ADC, DMA) and the lightweight DMA callbacks that flag the newest finished
+  buffer half. The crossing scan runs on that half from `loop()`, not in the
+  DMA interrupt: the scan is a large O(samples) workload and keeping it in the
+  ISR saturates the CPU and starves USB-CDC enumeration. Let `scan()` run at
+  thread priority where the USB interrupt can preempt it.
 - `src/scan.cpp` / `src/scan.h` — the crossing scan, exposure measurement and
   the result FIFO. Pure integer, stdint only, free of HAL and Arduino: the
   native unit tests (`pio test -e native`) compile it directly, so it must

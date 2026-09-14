@@ -72,11 +72,10 @@ void fifoPush(ResultFifo* f, const Result& r);
 // Scans `count` consecutive samples. `samples` is one finished buffer half;
 // the absolute time base and the overlap sample live in `*s`. The nextIndex
 // in `*s` advances by `count`, so callers only pass the newest finished chunk
-// in time order. The samples are read volatile because the DMA writes them
-// concurrently (a plain pointer requires a qualification conversion, which
-// both the firmware DMA buffer and the native test vectors satisfy). Finished
-// measurements go into `fifo`.
-void scan(const volatile uint16_t* samples, uint32_t count, State* s,
+// in time order. The DMA may fill the other half while this one is scanned;
+// this half is quiescent, so a plain `const uint16_t*` is sufficient.
+// Finished measurements go into `fifo`.
+void scan(const uint16_t* samples, uint32_t count, State* s,
           ResultFifo* fifo);
 
 // Pops one finished measurement. Returns false when the FIFO is empty. Runs

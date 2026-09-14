@@ -56,7 +56,7 @@ void initState(State* s) { *s = State{}; }
 
 void fifoInit(ResultFifo* f) { f->head = 0; f->tail = 0; }
 
-void scan(const volatile uint16_t* samples, uint32_t count, State* s,
+void scan(const uint16_t* samples, uint32_t count, State* s,
           ResultFifo* fifo) {
   for (uint32_t k = 0; k < count; ++k) {
     int32_t v = samples[k];

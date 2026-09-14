@@ -1,7 +1,8 @@
 // shuttercheck — shutter edge scan and exposure reporting (issue 5).
 //
-// setup() starts the capture path (calibrated first). loop() drains the
-// result FIFO: an accepted pulse prints the exposure in nanoseconds, a
+// setup() starts the capture path (calibrated first). loop() runs the
+// crossing scan on each finished buffer half at thread priority, then drains
+// the result FIFO: an accepted pulse prints the exposure in nanoseconds, a
 // rejection prints a zero value, and an accepted sample flashes the LED
 // once. No measurement arithmetic happens here (design invariant 7: report
 // from loop() only).
@@ -21,6 +22,10 @@ void setup() {
 }
 
 void loop() {
+  // Scan the newest finished buffer half at thread priority, where the USB
+  // and DMA interrupts can preempt it (invariant 7).
+  capture::processNextHalf();
+
   scan::Result r;
   while (capture::nextResult(&r)) {
     if (r.status == scan::Status::kOk) {
