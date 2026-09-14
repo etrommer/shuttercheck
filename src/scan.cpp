@@ -50,6 +50,147 @@ inline Status classify(const State& s) {
   if (s.bright - s.dark < kWeakMinSpan) return Status::kWeak;
   return Status::kOk;
 }
+
+// Band geometry for one sample: the threshold and its hysteresis edges.
+// The plateaus cannot move while a sample is processed, so the geometry is
+// fixed for the whole iteration and can be computed once.
+struct Band {
+  int32_t thr;
+  int32_t lowEdge;
+  int32_t highEdge;
+};
+
+inline Band bandOf(const State& s) {
+  int32_t thr = currentThr(s);
+  int32_t half = currentBand(s) / 2;
+  return Band{thr, thr - half, thr + half};
+}
+
+inline bool inBand(int32_t v, const Band& b) {
+  return v >= b.lowEdge && v <= b.highEdge;
+}
+
+// Seeding: the very first sample ever. The shutter is closed at power-on, so
+// the sample is the dark level; the bright plateau starts one small step
+// above it (kInitSpread).
+inline void seedFirstSample(State* l, int32_t v) {
+  l->prev = v;
+  l->havePrev = 1;
+  l->dark = v;
+  l->initDark = 1;
+  l->bright = v + kInitSpread;
+  l->initBright = 1;
+  l->nextIndex = 1;
+  l->prevInBand = 0;
+}
+
+// Quiet-run fast path: when no pulse is open, runs of samples that provably
+// change nothing but the index are skipped whole. Two disjoint cases (prev
+// is either strictly inside the band, or exactly on a plateau; the band and
+// the plateaus cannot move during either run):
+//  A. prev strictly inside the band -> every strictly-in-band sample is
+//     EMA-excluded and cannot cross: a rise needs prev at/below the low
+//     edge, a stale fall needs prev at/above the high edge. The run's last
+//     sample becomes prev; prevInBand stays 1.
+//  B. prev sits exactly on dark or bright -> each equal sample leaves the
+//     EMA at its value (the update is a no-op) and cannot cross. prev and
+//     prevInBand stay put.
+// hitRail cannot latch either (in-band and plateau values stay far below the
+// rail, and no pulse is open anyway). Samples at the exact band edges stay
+// on the full path: prev at an edge is an armed state.
+// Returns true when a run was skipped.
+inline bool skipQuietRun(State* l, const uint16_t* samples, uint32_t* k,
+                         uint32_t count, const Band& b) {
+  if (l->inPulse) return false;
+  // Order the tests hot-first: with a pulse open (common on a busy signal)
+  // the gate exits on the very first test.
+  if (l->prevInBand && l->prev > b.lowEdge && l->prev < b.highEdge &&
+      samples[*k] > b.lowEdge && samples[*k] < b.highEdge) {
+    // Case A: run of strictly-in-band samples.
+    uint32_t run = 1;
+    while (*k + run < count) {
+      int32_t w = samples[*k + run];
+      if (w <= b.lowEdge || w >= b.highEdge) break;
+      ++run;
+    }
+    l->prev = samples[*k + run - 1];
+    l->nextIndex += run;
+    *k += run;
+    return true;
+  }
+  if ((l->prev == l->dark || l->prev == l->bright) &&
+      samples[*k] == l->prev) {
+    // Case B: run of samples equal to the plateau.
+    uint32_t run = 1;
+    while (*k + run < count && samples[*k + run] == l->prev) ++run;
+    l->nextIndex += run;
+    *k += run;
+    return true;
+  }
+  return false;
+}
+
+// Crossing kinds for one sample pair (prev -> v).
+enum class Crossing : uint8_t {
+  kNone,
+  kRise,     // Closed -> open: prev re-armed below the low edge and v at/above
+             // the threshold. Opens a pulse.
+  kFall,     // Open -> closed: the open pulse falls back through its locked
+             // threshold. Finishes a pulse.
+  kStale,    // A falling crossing with no open pulse. Lone fall: dropped.
+};
+
+inline Crossing detectCrossing(const State& l, int32_t v, const Band& b) {
+  // Rising edge: only when the signal came back below the low band edge (the
+  // re-arm); v at/above the threshold opens. `prev < thr` is redundant:
+  // lowEdge = thr - half with half >= 4, so prev <= lowEdge already implies
+  // prev < thr.
+  if (l.prev <= b.lowEdge && v >= b.thr) return Crossing::kRise;
+  if (l.inPulse) {
+    // An open pulse closes when it falls back through the locked threshold.
+    if (l.prev >= l.scanThr && v < l.scanThr) return Crossing::kFall;
+    return Crossing::kNone;
+  }
+  // Lone falling crossing, stale and dropped. `prev >= thr` is redundant:
+  // highEdge = thr + half with half >= 4, so prev >= highEdge already
+  // implies prev >= thr.
+  if (l.prev >= b.highEdge && v < b.thr) return Crossing::kStale;
+  return Crossing::kNone;
+}
+
+// Plateau tracking: carry the previous sample into its plateau EMA, only if
+// it was outside the band and did not straddle a crossing. In-band samples
+// are excluded as noise.
+inline void trackPlateaus(State* l, const Band& b, bool crossed) {
+  if (l->prevInBand || crossed) return;
+  if (l->prev <= b.lowEdge) {
+    l->dark = (l->dark * (kEmaK - 1) + l->prev) / kEmaK;
+  } else if (l->prev >= b.highEdge) {
+    l->bright = (l->bright * (kEmaK - 1) + l->prev) / kEmaK;
+  }
+}
+
+// A rising crossing opens a pulse: lock this excursion's threshold and
+// record its opening time.
+inline void openPulse(State* l, int32_t v, const Band& b, uint64_t index) {
+  l->scanThr = b.thr;
+  l->inPulse = 1;
+  l->hitRail = 0;
+  l->riseNs = interpolateNs(l->prev, v, b.thr, index);
+}
+
+// A falling crossing closes the open pulse: interpolate the closing time,
+// classify the excursion and push the measurement. Rejections print no value
+// (README output: "0 clipped", "0 weak").
+inline void closePulse(State* l, int32_t v, uint64_t index,
+                       ResultFifo* fifo) {
+  int64_t fallNs = interpolateNs(l->prev, v, l->scanThr, index);
+  Result r;
+  r.status = classify(*l);
+  r.exposureNs = (r.status == Status::kOk) ? (fallNs - l->riseNs) : 0;
+  fifoPush(fifo, r);
+  l->inPulse = 0;
+}
 }  // namespace
 
 void initState(State* s) { *s = State{}; }
@@ -65,134 +206,48 @@ void scan(const uint16_t* samples, uint32_t count, State* s,
   State l = *s;
   uint32_t k = 0;
   while (k < count) {
-    int32_t v = samples[k];
-
-    // First sample ever: seed the plateaus and the overlap sample, then move
-    // on. The shutter is closed, so the first sample is the dark level.
+    // Seeding: the very first sample ever initializes the plateaus, then
+    // move on.
     if (!l.havePrev) {
-      l.prev = v;
-      l.havePrev = 1;
-      l.dark = v;
-      l.initDark = 1;
-      l.bright = v + kInitSpread;
-      l.initBright = 1;
-      l.nextIndex = 1;
-      l.prevInBand = 0;
+      seedFirstSample(&l, samples[k]);
       ++k;
       continue;
     }
 
-    // Quiet-run fast path: when no pulse is open, runs of samples that
-    // provably change nothing but the index are skipped whole. Two disjoint
-    // cases (prev is either strictly inside the band, or exactly on a
-    // plateau; the band and the plateaus cannot move during either run):
-    //  A. prev strictly inside the band -> every strictly-in-band sample is
-    //     EMA-excluded and cannot cross: a rise needs prev at/below the low
-    //     edge, a stale fall needs prev at/above the high edge. The run's
-    //     last sample becomes prev; prevInBand stays 1.
-    //  B. prev sits exactly on dark or bright -> each equal sample leaves
-    //     the EMA at its value (the update is a no-op) and cannot cross.
-    //     prev and prevInBand stay put.
-    // hitRail cannot latch either (in-band and plateau values stay far below
-    // the rail, and no pulse is open anyway). Samples at the exact band
-    // edges stay on the full path: prev at an edge is an armed state.
-    int32_t thr = currentThr(l);
-    int32_t band = currentBand(l);
-    int32_t half = band / 2;
-    int32_t lowEdge = thr - half;
-    int32_t highEdge = thr + half;
-    if (!l.inPulse) {
-      bool common = false;
-      // Order the tests hot-first: with a pulse open (common on a busy
-      // signal) the gate exits on the very first test.
-      if (l.prevInBand && l.prev > lowEdge && l.prev < highEdge &&
-          v > lowEdge && v < highEdge) {
-        // Case A: run of strictly-in-band samples.
-        common = true;
-        uint32_t run = 1;
-        while (k + run < count) {
-          int32_t w = samples[k + run];
-          if (w <= lowEdge || w >= highEdge) break;
-          ++run;
-        }
-        l.prev = samples[k + run - 1];
-        l.nextIndex += run;
-        k += run;
-      } else if ((l.prev == l.dark || l.prev == l.bright) && v == l.prev) {
-        // Case B: run of samples equal to the plateau.
-        common = true;
-        uint32_t run = 1;
-        while (k + run < count && samples[k + run] == l.prev) ++run;
-        l.nextIndex += run;
-        k += run;
-      }
-      if (common) continue;
-    }
+    // Band geometry: fixed for this iteration (the plateaus cannot move
+    // while one sample is processed).
+    Band b = bandOf(l);
 
-    bool curInBand = (v >= lowEdge) && (v <= highEdge);
+    // Quiet-run fast path: skip whole runs that change nothing but the index.
+    if (skipQuietRun(&l, samples, &k, count, b)) continue;
 
-    bool rising = false;
-    bool falling = false;
-    bool crossed = false;
+    int32_t v = samples[k];
 
     // Clipped latch: while a pulse is open, any raw sample at/near the ADC
     // rail saturates the excursion and marks it untrusted.
     if (l.inPulse && v >= kFullScale - kClippedMargin) l.hitRail = 1;
 
-    // Rising edge: only when the signal came back below the low band edge
-    // (the re-arm). Lock the threshold for this excursion. `prev < thr` is
-    // redundant: lowEdge = thr - half with half >= 4, so prev <= lowEdge
-    // already implies prev < thr.
-    if (l.prev <= lowEdge && v >= thr) {
-      rising = true;
-      crossed = true;
-    } else if (l.inPulse) {
-      // An open pulse closes when it falls back through the locked threshold.
-      if (l.prev >= l.scanThr && v < l.scanThr) {
-        falling = true;
-        crossed = true;
-      }
-    } else {
-      // A falling crossing with no open pulse is a lone falling crossing:
-      // stale, dropped. `prev >= thr` is redundant: highEdge = thr + half
-      // with half >= 4, so prev >= highEdge already implies prev >= thr.
-      if (l.prev >= highEdge && v < thr) {
-        falling = true;
-        crossed = true;
-      }
-    }
-
-    // Plateau tracking: the previous sample, only if it was outside the band
-    // and did not straddle a crossing.
-    if (!(l.prevInBand || crossed)) {
-      if (l.prev <= lowEdge) {
-        l.dark = (l.dark * (kEmaK - 1) + l.prev) / kEmaK;
-      } else if (l.prev >= highEdge) {
-        l.bright = (l.bright * (kEmaK - 1) + l.prev) / kEmaK;
-      }
-    }
+    // Crossing detection, plateau tracking and pulse bookkeeping, in that
+    // order: plateau tracking must see the previous sample before prev is
+    // overwritten, and a crossing excludes its straddling sample.
+    Crossing c = detectCrossing(l, v, b);
+    bool crossed = c != Crossing::kNone;
+    bool curInBand = inBand(v, b);
+    trackPlateaus(&l, b, crossed);
 
     uint64_t index = l.nextIndex;
-    if (rising) {
-      l.scanThr = thr;
-      l.inPulse = 1;
-      l.hitRail = 0;
-      l.riseNs = interpolateNs(l.prev, v, thr, index);
-    } else if (falling) {
-      if (l.inPulse) {
-        int64_t fallNs = interpolateNs(l.prev, v, l.scanThr, index);
-        Result r;
-        r.status = classify(l);
-        // Rejections print no value (README output: "0 clipped", "0 weak").
-        r.exposureNs = (r.status == Status::kOk) ? (fallNs - l.riseNs) : 0;
-        fifoPush(fifo, r);
-        l.inPulse = 0;
-      } else {
-        Result r;
-        r.status = Status::kStale;
-        r.exposureNs = 0;
-        fifoPush(fifo, r);
-      }
+    switch (c) {
+      case Crossing::kRise:
+        openPulse(&l, v, b, index);
+        break;
+      case Crossing::kFall:
+        closePulse(&l, v, index, fifo);
+        break;
+      case Crossing::kStale:
+        fifoPush(fifo, Result{Status::kStale, 0});
+        break;
+      case Crossing::kNone:
+        break;
     }
 
     l.prev = v;
