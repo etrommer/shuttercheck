@@ -45,4 +45,6 @@ jobs:
       - name: Install PlatformIO Core
         run: pip install --upgrade platformio
       - name: Run native unit tests
-        run: pio test -e native
+        run: |
+          python scripts/gen_test_data.py
+          pio test -e native
