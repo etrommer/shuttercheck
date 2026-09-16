@@ -9,11 +9,11 @@ sends the measured exposure over USB CDC. Any serial terminal can read it.
 
 [![PlatformIO CI](https://github.com/etrommer/shuttercheck/actions/workflows/ci.yml/badge.svg)](https://github.com/etrommer/shuttercheck/actions/workflows/ci.yml)
 
-The capture path operates at this time. The firmware samples PA1 on the
-timer-driven grid and sends the raw counts over USB CDC as `adc <counts>`
-lines, ten reports each second. The crossing scan and the shutter measurement
-are not written. Thus the firmware does not print the exposure. `AGENTS.md`
-holds the build and flash commands and the design invariants.
+The capture path and the crossing scan operate at this time. The firmware
+samples PA1 on the timer-driven 2 µs grid, rebuilds both shutter edges and
+sends the measured exposure over USB CDC as `<exposure ns> ok` lines.
+Rejections print `0 <status>`. `AGENTS.md` holds the build and flash commands
+and the design invariants.
 
 ## How it measures
 
@@ -44,7 +44,8 @@ holds the build and flash commands and the design invariants.
    band is max(8 LSB, one sixteenth of the bright−dark span). A pulse re-arms
    only after the signal falls back to the low band edge. The firmware
    estimates the plateaus from samples that are not in a crossing pair and not
-   in the band.
+   in the band. The *crossing algorithm* section below walks through this
+   detection step by step.
 5. **Exposure.** The exposure is `t_cross(falling) − t_cross(rising)`. A
    sample is valid only if it has exactly one rising and one falling crossing.
    There are two rejection paths:
@@ -71,6 +72,99 @@ voltage. The rising crossing is the shutter opening. The falling crossing is
 the shutter closing. The phototransistor is an emitter follower. Thus the
 front end is non-inverting.
 
+### The crossing algorithm
+
+The firmware processes one new sample at a time. Each step decides, in order:
+the plateau estimates, the threshold and the hysteresis band, and the edges.
+Most samples change no state except the sample index. This walkthrough
+describes the full path of one sample.
+
+The scan carries state across buffer chunks:
+
+| Value              | Meaning                                          |
+|--------------------|--------------------------------------------------|
+| previous sample    | The last sample of the previous chunk            |
+| dark plateau       | The EMA estimate of the dark level               |
+| bright plateau     | The EMA estimate of the bright level             |
+| locked threshold   | The threshold of the open pulse, fixed at its rise |
+| opening time       | The interpolated time of the rising crossing     |
+| rail latch         | A bright raw sample reached near full scale during the open pulse |
+| absolute index     | The sample number over the whole capture         |
+
+**Boot.** The first sample seeds the dark plateau. The shutter is closed at
+power-on. Thus the first sample is the dark level. The bright plateau starts
+16 LSB above it. The first real pulse then raises the bright estimate.
+
+**The plateaus.** The firmware estimates a plateau with a moving average:
+
+```
+value = value + (sample − value) / 64
+```
+
+The division truncates. Thus the estimate moves in integer steps. Each
+accepted sample moves the estimate one sixty-fourth of the way to the sample.
+A noise tick of a few LSB moves the estimate by almost nothing. The previous
+sample enters the dark estimate only when it lies below the low band edge. It
+enters the bright estimate only when it lies above the high band edge.
+Samples in the band and samples in a crossing pair are excluded: they belong
+to neither plateau.
+
+**The band.** The threshold is the midpoint of the two estimates:
+
+```
+thr = (dark + bright) / 2
+```
+
+The hysteresis band is `max(8 LSB, (bright − dark) / 16)`. The band edges
+sit at `thr ± band/2`. The band has two jobs. It stops noise from faking a
+rise: a rising edge needs a step of at least half the band. It keeps the
+plateaus clean: only samples clearly on one side of the band feed an
+estimate.
+
+**The edges.** A crossing needs the previous sample on one side and the new
+sample on the other side of the threshold.
+
+- **Rising (shutter opens).** The previous sample must lie at or below the
+  low band edge, and the new sample must reach the threshold. The low-edge
+  condition is the re-arm: a rise can fire only after the signal came back
+  below the band. At the rise, the firmware locks the threshold for this
+  pulse and records the interpolated opening time.
+- **Falling (shutter closes).** While a pulse is open, the new sample must
+  fall below the locked threshold. The firmware interpolates the closing
+  time and computes the exposure:
+
+  ```
+  exposure = closing time − opening time
+  ```
+
+- **Stale.** A falling pattern with no open pulse is a lone falling
+  crossing. The firmware reports `stale` and drops it.
+
+Both crossing times come from the interpolation formula in step 4.
+
+**Why the threshold is locked.** The midpoint can move while a pulse is open.
+A light level that drifts (for example xenon flash decay) biases a moving
+threshold. The locked threshold crosses both edges at the same fraction of
+the swing. Measurement between equal-fraction crossings cancels the shape of
+the optical edge. See the plateau estimation row in Accuracy above.
+
+**Validity and rejections.** A sample is valid only when exactly one rising
+and one falling crossing close one pulse. Two rejection paths remain.
+
+- `clipped`: while a pulse is open, any raw sample at or above 4063 (full
+  scale minus 32) latches the rail flag. The firmware checks the raw samples,
+  not the bright estimate. The integer estimate stalls about 64 LSB below a
+  constant level. Thus it can never enter the 32 LSB rail zone by itself.
+- `weak`: the bright−dark span is below 48 LSB.
+
+Rejected pulses print `0 clipped` or `0 weak`.
+
+**One optimization.** Runs of consecutive samples that can change no state
+are skipped as one block. A run is skippable when no pulse is open and every
+sample of the run either stays strictly inside the band or equals its
+plateau. Such samples cannot start an edge and cannot move an estimate. The
+walkthrough above describes the full path. Most samples take the short path.
+
 ### Output
 
 One line for each capture on the USB CDC port. The line holds nanoseconds and
@@ -94,6 +188,16 @@ The LED on PB12 gives one short flash for each accepted sample. It stays dark
 for a rejection. `2481234 ns` = 2.481 ms ≈ 1/403 s. Send the output to any
 serial terminal (`pio device monitor`). No host-side software is necessary.
 
+## Required hardware
+
+| Part | Notes |
+|------|-------|
+| Black Pill board with [STM32F103C8T6](https://www.st.com/en/microcontrollers-microprocessors/stm32f103c8.html) | 64 KiB flash. For a 128 KiB clone, build the `blackpill_f103c8_128` env |
+| [SFH 309 FA](https://ams-osram.com/products/photodetectors/phototransistors/osram-radial-t1-sfh-309-fa) phototransistor ([datasheet](https://look.ams-osram.com/m/48f3c58ae57c5dfc/original/SFH-309.pdf)) | Si NPN, T1 3 mm radial. Point the lens at the shutter |
+| [ST-Link/V2](https://www.st.com/en/development-tools/st-link-v2.html) programmer | Flashes the board over SWD. Any STM32 SWD probe works |
+| `R_E` 1 kΩ, series 100 Ω, 1 nF (optional) | The series resistor is mandatory. The capacitor filters HF noise only |
+| USB cable, board 3V3/GND | The board supplies the front end. Keep 5 V away from PA1 |
+
 ## Wiring
 
 The complete front end operates from **3V3**. Keep 5 V away from the MCU pin.
@@ -107,6 +211,22 @@ PA1 is an ADC pin. Never let the node go above 3V3 + 0.3 V.
 | Series 100 Ω                | node A → PA1                      | Mandatory. Limits the ADC sampling-charge kick and the fault current. The ADC sample time is dimensioned for the total ≈1.1 kΩ source impedance |
 | 1 nF (optional)             | PA1 → GND, at the pin             | HF noise only. Do not use 100 nF here: with `R_E` = 1 kΩ, that value gives a 100 µs time constant and it smears a 250 µs pulse. 1 nF adds ≈1 µs of delay to both edges. The delay cancels in the width |
 | Black Pill                  | USB → PC                          | The board 3V3/GND supply the front end |
+
+### Hardware build
+
+Build the sensor head first. Then wire it to the board. Then flash and check.
+
+1. Build on breadboard or perfboard. Keep all leads short.
+2. Connect the phototransistor collector (long lead) to 3V3. Connect the emitter (short lead) to node A.
+3. Connect `R_E` 1 kΩ from node A to GND.
+4. Connect node A to PA1 through the 100 Ω series resistor. Do not omit it. It limits the sampling kick and the fault current.
+5. Optional: fit 1 nF from PA1 to GND at the pin. It filters HF noise only. Do not use 100 nF: it smears a 250 µs pulse.
+6. Power the front end from the board 3V3 and GND. Keep 5 V away from PA1. Never exceed 3V3 + 0.3 V on the pin.
+7. Wire the ST-Link to SWD (3V3, GND, PA13 = SWDIO, PA14 = SWCLK) and flash with `pio run -t upload`.
+8. Connect the board USB to the PC and open `pio device monitor`. Expect the `shuttercheck exposure` header line.
+9. Point the lens at the shutter. The half angle is only ±12°. Shine a steady test light through the shutter at the sensor.
+10. Set the light level so the bright plateau stays between 0.3 V and 1 V. If the monitor prints `clipped`, dim the source. If it prints `weak`, add light.
+11. Fire the shutter. Expect one `<exposure ns> ok` line and one LED flash per accepted sample.
 
 Front-end sizing:
 
@@ -154,13 +274,30 @@ compare it.
 
 ## Build, flash, run
 
-Requires PlatformIO (`pipx install platformio`, or the VS Code extension).
+You need [PlatformIO](https://platformio.org/) (`pipx install platformio`, or the VS Code extension).
+
+1. Clone the repo and enter it:
+
+```sh
+git clone https://github.com/etrommer/shuttercheck.git
+cd shuttercheck
+```
+
+2. Build the firmware. Run the unit tests with `pio test -e native`.
 
 ```sh
 pio run                 # build the default env, blackpill_f103c8
 pio run -e blackpill_f103c8_128   # build a 128 KiB clone
+pio test -e native     # run the native scan unit tests
 pio run -t upload       # flash over ST-Link (SWD: 3V3, GND, PA13 = SWDIO, PA14 = SWCLK)
 pio device monitor      # read the reports from /dev/ttyACM0
+```
+
+3. Flash the board over ST-Link, then open the monitor. Expect this header line, then one line per capture:
+
+```
+shuttercheck exposure
+2481234 ok
 ```
 
 ### USB permissions for the upload

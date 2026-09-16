@@ -1,4 +1,7 @@
 // Capture path: TIM3 (TRGO) + ADC1 + DMA1_Channel1, through the STM32 HAL.
+// The whole file is firmware-only: the native unit-test build compiles it as
+// an empty translation unit and tests src/scan.cpp directly.
+#if defined(ARDUINO)
 #include "capture.h"
 
 #include <Arduino.h>
@@ -9,34 +12,45 @@ namespace {
 
 constexpr uint32_t kTotalSamples = 2 * kHalfSamples;
 
-volatile uint16_t buffer[kTotalSamples];
+// DMA double buffer. Only the finished (quiescent) half is read, and only
+// after `g_readyHalf` (the volatile handshake) reports it as complete, so the
+// samples themselves need no volatile qualifier.
+uint16_t buffer[kTotalSamples];
 
-// 0 = first half finished, 1 = second half finished. The ISR keeps the
-// newest finished half here; `newestHalf()` reads the other half, which the
-// DMA is not touching.
-volatile uint32_t newestHalfIndex = 2;  // 2 = nothing yet.
+// Set by the DMA callbacks to the index (0 or 1) of the newest finished half;
+// 2 means none. Volatile because an ISR writes it and loop() reads it.
+volatile uint32_t g_readyHalf = 2;
 
 ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
 TIM_HandleTypeDef htim3;
 
+// Crossing-scan state and result FIFO (issue 5). The scan runs in
+// processNextHalf() from loop() at thread priority.
+scan::State g_state;
+scan::ResultFifo g_fifo;
+
+void onHalfFinished(uint32_t idx) { g_readyHalf = idx; }
+
 }  // namespace
 
-// DMA1_Channel1 transfer/half-complete vector. The crossing scan (later
-// issue) belongs here; for now the callbacks only publish the finished half.
+// DMA1_Channel1 transfer/half-complete vector. The callbacks only publish the
+// newest finished half; the crossing scan runs in processNextHalf() from
+// loop() so the USB interrupt can preempt it (an ISR-long crosser starves the
+// USB stack and breaks enumeration).
 extern "C" void DMA1_Channel1_IRQHandler(void) {
   HAL_DMA_IRQHandler(&hdma_adc1);
 }
 
 extern "C" void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc) {
   if (hadc == &hadc1) {
-    newestHalfIndex = 0;
+    onHalfFinished(0);
   }
 }
 
 extern "C" void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
   if (hadc == &hadc1) {
-    newestHalfIndex = 1;
+    onHalfFinished(1);
   }
 }
 
@@ -111,18 +125,23 @@ void begin() {
   // end (design invariant 3). No conversion ran before this.
   HAL_ADCEx_Calibration_Start(&hadc1);
 
-  HAL_ADC_Start_DMA(&hadc1,
-                    reinterpret_cast<uint32_t*>(const_cast<uint16_t*>(buffer)),
+  HAL_ADC_Start_DMA(&hadc1, reinterpret_cast<uint32_t*>(buffer),
                     kTotalSamples);
 }
 
-bool newestHalf(const volatile uint16_t*& out) {
-  uint32_t idx = newestHalfIndex;
+bool processNextHalf() {
+  uint32_t idx = g_readyHalf;  // Volatile read of the newest finished half.
   if (idx > 1) {
     return false;
   }
-  out = &buffer[(idx ^ 1U) * kHalfSamples];
+  g_readyHalf = 2;  // Consume the handshake so this half is scanned once.
+  // The half is quiescent here: the circular DMA is filling the other half,
+  // so the scan reads it at thread priority as a plain array.
+  scan::scan(&buffer[idx * kHalfSamples], kHalfSamples, &g_state, &g_fifo);
   return true;
 }
 
+bool nextResult(scan::Result* out) { return scan::fifoPop(&g_fifo, out); }
+
 }  // namespace capture
+#endif  // defined(ARDUINO)
