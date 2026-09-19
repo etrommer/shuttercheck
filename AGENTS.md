@@ -35,6 +35,14 @@ rules only: workflow, layout, commands, platform facts, invariants.
   native unit tests (`pio test -e native`) compile it directly, so it must
   not pull in firmware-only headers. Keep it separate from reporting so the
   scan timing stays obvious.
+- `src/selfcheck.cpp` / `src/selfcheck.h` — the on-device self test (issue 8),
+  compiled only into `ON_DEVICE_TEST` builds. It asks the HAL and the capture
+  path for the peripheral state and runs the generated scan cases; it reads no
+  peripheral registers of its own.
+- `test/scan_cases.h` — feeds one generated case through the scan and records
+  what came out. Free of Unity and of the HAL, so `test/test_scan.cpp`
+  (native, asserts with Unity) and `src/selfcheck.cpp` (on device, prints
+  PASS/FAIL) share one feeder and one set of expectations.
 - Use the STM32 HAL where possible. Go below the HAL only where the F1 HAL
   does not reach, and say why in a comment.
 
@@ -54,7 +62,12 @@ pio run -t upload            # flash (ST-Link over SWD)
 pio run -t clean
 pio device monitor           # read reports on the USB CDC port
 pio run -t upload -e blackpill_f103c8_128   # 128 KiB clone
+python scripts/on_device_test.py            # flash the self test, read its report
 ```
+
+- `pio run -t upload` ends with an OpenOCD reset. The board runs the new
+  firmware right after the flash. Without that reset OpenOCD leaves the core
+  halted and nothing happens until you press reset.
 
 ## Platform facts (verified, do not re-derive)
 
@@ -103,3 +116,9 @@ Use CI and unit tests for hardware-independent work (compilation, arithmetic).
 Validate hardware-dependent work _on hardware_: check for a suitable board, and
 stop and ask how to proceed if none is found. Define the expected outcome
 first, either in the issue or as a test.
+
+`python scripts/on_device_test.py` is the hardware regression test: it flashes
+the `on_device_test` environment, reads the report and exits non-zero on a
+failure. It covers the clock tree, the capture start, the crossing scan and the
+USB stack without a sensor. It needs a board, so CI does not run it. The ADC
+and DMA data path still needs a controlled optical input.

@@ -1,45 +1,26 @@
 // Shutter edge scan unit test (native).
 //
 // Feeds the hand-crafted synthetic streams from test/test_data.h through the
-// scan in 512-sample chunks (the DMA/callback quantum), drains the result
-// FIFO after each chunk and asserts the exact expected result sequence.
-// The expected values are literals derived from the spec geometry (crossing
-// formula, known thresholds); nothing here replicates the scan algorithm.
+// scan and asserts the exact expected result sequence. The feeder is
+// test/scan_cases.h, shared with the on-device self test (issue 8), so both
+// reporters see the same results. The expected values are literals derived
+// from the spec geometry (crossing formula, known thresholds); nothing here
+// replicates the scan algorithm.
 #include <unity.h>
 
-#include "scan.h"
-#include "test_data.h"
+#include "scan_cases.h"
 
 namespace {
 
 void runCase(uint32_t idx) {
-  const testdata::Case& c = testdata::kCases[idx];
+  const testdata::Case& c = scancases::caseAt(idx);
+  const scancases::CaseRun r = scancases::run(idx);
 
-  scan::State st;
-  scan::initState(&st);
-  scan::ResultFifo fifo;
-  scan::fifoInit(&fifo);
-
-  scan::Result results[scan::kFifoSize];
-  uint32_t n = 0;
-
-  // Feed in the same chunk quantum the DMA callbacks deliver, carrying the
-  // state and the one overlap sample across the boundary.
-  uint32_t off = 0;
-  while (off < c.count) {
-    uint32_t chunk = c.count - off;
-    if (chunk > scan::kChunkSamples) chunk = scan::kChunkSamples;
-    scan::scan(c.samples + off, chunk, &st, &fifo);
-    off += chunk;
-    scan::Result r;
-    while (scan::fifoPop(&fifo, &r) && n < scan::kFifoSize) results[n++] = r;
-  }
-
-  TEST_ASSERT_EQUAL_UINT32(c.expectedCount, n);
+  TEST_ASSERT_EQUAL_UINT32(c.expectedCount, r.gotCount);
   for (uint32_t j = 0; j < c.expectedCount; ++j) {
-    TEST_ASSERT_EQUAL_STRING(c.expected[j].status,
-                             scan::statusName(results[j].status));
-    TEST_ASSERT_EQUAL_INT64(c.expected[j].ns, results[j].exposureNs);
+    TEST_ASSERT_TRUE(r.got[j].present);
+    TEST_ASSERT_EQUAL_STRING(c.expected[j].status, r.got[j].status);
+    TEST_ASSERT_EQUAL_INT64(c.expected[j].ns, r.got[j].ns);
   }
 }
 

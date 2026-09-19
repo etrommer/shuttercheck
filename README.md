@@ -300,6 +300,48 @@ shuttercheck exposure
 2481234 ok
 ```
 
+### On-device self test
+
+The `on_device_test` environment builds a firmware that tests itself. It
+starts the capture path, but it feeds the generated scan vectors to the scan
+instead of the ADC output. Thus it needs no sensor and no light. It checks the
+clock frequencies, the capture path, the USB connection and the eight scan
+cases, and it prints one line per check:
+
+```sh
+python scripts/gen_test_data.py      # generate the scan vectors
+pio run -e on_device_test -t upload  # build and flash
+pio device monitor                   # read the report
+```
+
+```
+PASS sysclk 72 MHz
+PASS hclk 72 MHz
+PASS pclk1 36 MHz
+PASS pclk2 72 MHz
+PASS adcclk 12 MHz
+PASS usbclk 48 MHz
+PASS capture running
+PASS usb host connected
+PASS scan case 0
+...
+PASS scan case 7
+ALL TESTS PASSED
+```
+
+The LED blinks forever when a check fails. It stays dark when everything
+passes. The report waits up to 10 s for a host to open the CDC port. Open the
+port, or press reset, inside that window.
+
+One command does all of it. It builds, flashes, reads the report and exits
+non-zero on a failure or on a timeout:
+
+```sh
+python scripts/on_device_test.py   # needs a board on SWD and on USB
+```
+
+GitHub CI does not run it: the runner has no board.
+
 ### USB permissions for the upload
 
 On Linux, `pio run -t upload` fails with `LIBUSB_ERROR_ACCESS` if your user
