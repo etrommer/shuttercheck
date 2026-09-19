@@ -122,3 +122,13 @@ the `on_device_test` environment, reads the report and exits non-zero on a
 failure. It covers the clock tree, the capture start, the crossing scan and the
 USB stack without a sensor. It needs a board, so CI does not run it. The ADC
 and DMA data path still needs a controlled optical input.
+
+With no sensor you can still drive the whole capture to report path by hand.
+Halt the core over SWD, write a known 512-sample pulse into the DMA buffer
+(`capture::buffer` in `.bss`), zero the scan state and the result FIFO, set
+`g_readyHalf` to the buffer half you wrote, clear the DMA channel enable so
+nothing overwrites the data, then resume. The board prints the measurement for
+those samples over USB CDC. Get the symbol addresses per build with
+`arm-none-eabi-nm -S`: they move when the layout changes. Used on 2026-09-19 to
+show `500000 ok` for a 500-sample pulse, the same value the native build of
+`src/scan.cpp` gives.
