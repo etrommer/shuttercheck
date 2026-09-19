@@ -65,10 +65,11 @@ pio run -t upload -e blackpill_f103c8_128   # 128 KiB clone
   counts at 72 MHz, the ADC clock is 12 MHz (PCLK2/6), USB is 48 MHz.
 - `LED_BUILTIN` is PB12 and active-low (`LOW` lights it). A Blue Pill macro
   would move it to PC13; do not define one.
-- USB CDC needs `-D PIO_FRAMEWORK_ARDUINO_ENABLE_CDC -D USBCON` in
-  `build_flags`: the pinned framework does not set `USBCON` by itself. The
-  F103 has no internal D+ pull-up, so the board must fit 1.5 kΩ from PA12 to
-  3V3; the Black Pill does.
+- USB CDC needs `-D PIO_FRAMEWORK_ARDUINO_ENABLE_CDC` in `build_flags`. The
+  framework builder turns it into `USBD_USE_CDC`, `USBCON`, `USB_VID`,
+  `USB_PID` and `HAL_PCD_MODULE_ENABLED`, and it builds the USBDevice library.
+  Do not define those by hand. The F103 has no internal D+ pull-up, so the
+  board must fit 1.5 kΩ from PA12 to 3V3; the Black Pill does.
 - The build uses the pinned OpenOCD/ST-Link flow in `platformio.ini`. See
   `README.md` for the udev rule and for the serial bootloader path.
 
