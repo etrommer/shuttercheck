@@ -11,6 +11,9 @@
 
 #include "capture.h"
 #include "scan.h"
+#if defined(SHUTTERCHECK_DEBUG)
+#include "debug.h"
+#endif
 #if defined(ON_DEVICE_TEST)
 #include "selfcheck.h"
 #endif
@@ -50,11 +53,18 @@ void loop() {
   }
 #else
   // Scan the newest finished buffer half at thread priority, where the USB
-  // and DMA interrupts can preempt it (invariant 7).
+  // and DMA interrupts can preempt it (invariant 7). Only the debug build
+  // needs to know whether a chunk was scanned.
+#if defined(SHUTTERCHECK_DEBUG)
+  const bool chunkScanned = capture::processNextHalf();
+#else
   capture::processNextHalf();
-
+#endif
   scan::Result r;
   while (capture::nextResult(&r)) {
+#if defined(SHUTTERCHECK_DEBUG)
+    debug::countResult(r);
+#endif
     if (r.status == scan::Status::kOk) {
       // "<exposure ns> ok"
       Serial.print(r.exposureNs);
@@ -70,6 +80,12 @@ void loop() {
       Serial.println(scan::statusName(r.status));
     }
   }
+#if defined(SHUTTERCHECK_DEBUG)
+  // Report the state of the capture path and the scan after the drain, so the
+  // `last` fields show the newest result. The debug output is extra output:
+  // it does not change the exposure, the status or the LED (issue 12).
+  debug::reportDue(chunkScanned);
+#endif
 #endif  // defined(ON_DEVICE_TEST)
 }
 #endif  // defined(ARDUINO)

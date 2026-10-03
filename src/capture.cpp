@@ -30,6 +30,14 @@ TIM_HandleTypeDef htim3;
 scan::State g_state;
 scan::ResultFifo g_fifo;
 
+#if defined(SHUTTERCHECK_DEBUG)
+// The halves that the DMA overwrote before the scan saw them, for the debug
+// report (issue 12).
+uint32_t g_lostHalves = 0;
+// The half of the last scan; 2 means no scan yet.
+uint32_t g_lastHalf = 2;
+#endif
+
 void onHalfFinished(uint32_t idx) { g_readyHalf = idx; }
 
 }  // namespace
@@ -135,6 +143,13 @@ bool processNextHalf() {
     return false;
   }
   g_readyHalf = 2;  // Consume the handshake so this half is scanned once.
+#if defined(SHUTTERCHECK_DEBUG)
+  // The DMA publishes only the newest finished half, so a finished half that
+  // is not the successor of the last scanned one was overwritten unscanned.
+  // That is one lost half, and the debug report counts them (issue 12).
+  if (g_lastHalf < 2 && idx == g_lastHalf) ++g_lostHalves;
+  g_lastHalf = idx;
+#endif
   // The half is quiescent here: the circular DMA is filling the other half,
   // so the scan reads it at thread priority as a plain array.
   // The polarity is a template parameter (issue 10): this build drives the
@@ -143,6 +158,11 @@ bool processNextHalf() {
                                        kHalfSamples, &g_state, &g_fifo);
   return true;
 }
+
+#if defined(SHUTTERCHECK_DEBUG)
+const scan::State& state() { return g_state; }
+uint32_t lostHalves() { return g_lostHalves; }
+#endif
 
 bool isRunning() {
   // HAL view of the live path: the ADC is in regular conversion and the

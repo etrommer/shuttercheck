@@ -325,6 +325,7 @@ cd shuttercheck
 pio run                 # build the default env, blackpill_f103c8
 pio run -e blackpill_f103c8_128   # build a 128 KiB clone
 pio test -e native     # run the native scan unit tests
+pio run -e debug         # build the debug env: prints the capture and scan state
 pio run -t upload       # flash over ST-Link (SWD: 3V3, GND, PA13 = SWDIO, PA14 = SWCLK)
 pio device monitor      # read the reports from /dev/ttyACM0
 ```
@@ -343,6 +344,60 @@ enumerates on USB, but it runs nothing until you press reset.
 The header goes out at boot. The CDC port drops everything it sends before a
 host opens the port. Thus you miss the header when you open the monitor later.
 Press reset to see it again.
+
+### Debug mode
+
+The `debug` environment prints the state of the capture path and of the scan
+on the same CDC port as the exposure report. Use it for bring-up: it shows the
+levels, not only the verdicts. The release build does not compile any of this
+code, also not in the scan loop.
+
+```sh
+pio run -e debug -t upload   # flash the debug build
+pio device monitor           # read the reports
+```
+
+One report is one line of `key=value` pairs, every 16 scanned chunks (about
+61 per second). The first report carries one extra line that names the report
+rate. Levels are in LSB of the 12-bit ADC.
+
+| Field | Meaning |
+|-------|---------|
+| `n` | Number of the reported chunk, counted from the start |
+| `min` | Lowest raw sample of the reported chunk |
+| `max` | Highest raw sample of the reported chunk |
+| `lo` | Lowest raw sample of any chunk since the start |
+| `hi` | Highest raw sample of any chunk since the start |
+| `dark` | Dark plateau estimate |
+| `bright` | Bright plateau estimate |
+| `span` | Plateau-to-plateau span, always positive |
+| `thr` | Threshold: the midpoint of the two plateaus |
+| `band` | Full width of the hysteresis band |
+| `rail` | 1 when the rail latch is set for the excursion in flight |
+| `pulse` | 1 while a pulse is open |
+| `lost` | Buffer halves that the DMA overwrote before the scan saw them |
+| `ok`, `stale`, `clip`, `weak` | Accepted pulses and rejections since the start |
+| `last` | Status name of the last result, or `none` |
+| `ns` | Exposure of the last result, or 0 |
+
+```
+# shuttercheck debug: one report per 16 scanned chunks; levels in LSB
+#48 min=2041 max=3903 lo=2038 hi=3904 dark=3896 bright=2049 span=1847 thr=2972 band=230 rail=0 pulse=0 lost=0 ok=3 stale=0 clip=0 weak=0 last=ok ns=500000
+```
+
+Read the report like this:
+
+- `lost` must stay 0. It counts the buffer halves that the DMA overwrote
+  before the scan saw them, so a rising `lost` says the print rate or the
+  scan is too slow. Build with a larger `DEBUG_CHUNK_INTERVAL` if it rises.
+- `min`, `max`, `lo` and `hi` show where the levels sit and whether they
+  drift. A flat signal within a few LSB means nothing moves on PA1.
+- `span` below 48 LSB is the noise floor, and such pulses are `weak`.
+- A level within 32 LSB of 4095 LSB shows as `clip`.
+
+The interval is a compile-time constant: `pio run -e debug` with
+`-D DEBUG_CHUNK_INTERVAL=32` in the build flags prints half as often. There is
+no run-time knob.
 
 ### On-device self test
 
