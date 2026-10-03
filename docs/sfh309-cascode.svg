@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:ev="http://www.w3.org/2001/xml-events" xmlns:xlink="http://www.w3.org/1999/xlink" baseProfile="full" height="100%" version="1.1" viewBox="3.0,13,1041.0,606.0" width="100%">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:ev="http://www.w3.org/2001/xml-events" xmlns:xlink="http://www.w3.org/1999/xlink" baseProfile="full" height="100%" version="1.1" viewBox="3.0,13,891.0,581" width="100%">
   <defs/>
   <g id="bkgnd">
-    <rect fill="white" height="606.0" stroke="none" stroke-width="1" width="1041.0" x="3.0" y="13"/>
+    <rect fill="white" height="581" stroke="none" stroke-width="1" width="891.0" x="3.0" y="13"/>
   </g>
   <g id="symbol" transform="translate(100,150.0) rotate(-90)">
     <rect fill="none" height="100" stroke="none" width="100" x="-50.0" y="-50.0"/>
@@ -53,13 +53,13 @@
   <polyline fill="none" points="311,403 320,405 318,396" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/>
   <text fill="black" font-family="sans-serif" font-size="16" text-anchor="middle" x="425" y="392">T1</text>
   <text fill="black" font-family="sans-serif" font-size="16" text-anchor="middle" x="452" y="413">SFH309 FA</text>
-  <g id="symbol" transform="translate(825.0,200)">
+  <g id="symbol" transform="translate(675.0,200)">
     <rect fill="none" height="100" stroke="none" width="250" x="-125.0" y="-50.0"/>
     <rect fill="lightgray" height="100" stroke="black" stroke-width="2" width="250" x="-125.0" y="-50.0"/>
   </g>
   <g id="text">
-    <text fill="black" font-family="sans-serif" font-size="16" text-anchor="middle" x="825.0" y="186">STM32F103C8T6</text>
-    <text fill="black" font-family="sans-serif" font-size="16" text-anchor="middle" x="825.0" y="226.8">PA1 (ADC1_IN1)</text>
+    <text fill="black" font-family="sans-serif" font-size="16" text-anchor="middle" x="675.0" y="186">STM32F103C8T6</text>
+    <text fill="black" font-family="sans-serif" font-size="16" text-anchor="middle" x="675.0" y="226.8">PA1 (ADC1_IN1)</text>
   </g>
   <g id="wire">
     <polyline fill="none" points="100,100 400,100" stroke="black" stroke-linecap="round" stroke-width="2"/>
@@ -74,7 +74,7 @@
     <polyline fill="none" points="100,400 100,500 400,500" stroke="black" stroke-linecap="round" stroke-width="2"/>
   </g>
   <g id="wire">
-    <polyline fill="none" points="100,100 100,60" stroke="black" stroke-linecap="round" stroke-width="2"/>
+    <polyline fill="none" points="250,100 250,60" stroke="black" stroke-linecap="round" stroke-width="2"/>
   </g>
   <g id="wire">
     <polyline fill="none" points="400.0,300.0 400,350" stroke="black" stroke-linecap="round" stroke-width="2"/>
@@ -83,9 +83,9 @@
     <polyline fill="none" points="400,450 400,500" stroke="black" stroke-linecap="round" stroke-width="2"/>
   </g>
   <g id="wire">
-    <polyline fill="none" points="400.0,200.0 700.0,200" stroke="black" stroke-linecap="round" stroke-width="2"/>
+    <polyline fill="none" points="400.0,200.0 550.0,200" stroke="black" stroke-linecap="round" stroke-width="2"/>
   </g>
-  <g id="symbol" transform="translate(100,100)">
+  <g id="symbol" transform="translate(250,100)">
     <rect fill="none" height="50" stroke="none" width="50" x="-25.0" y="-25.0"/>
     <circle cx="0" cy="0" fill="black" r="4" stroke="black" stroke-width="2"/>
   </g>
@@ -100,14 +100,8 @@
     <circle cx="0" cy="0" fill="black" r="4" stroke="black" stroke-width="2"/>
   </g>
   <g id="text"/>
-  <g id="symbol" transform="translate(400,500)">
-    <rect fill="none" height="50" stroke="none" width="50" x="-25.0" y="-25.0"/>
-    <circle cx="0" cy="0" fill="black" r="4" stroke="black" stroke-width="2"/>
-  </g>
-  <g id="text"/>
-  <text fill="black" font-family="sans-serif" font-size="16" text-anchor="middle" x="550" y="180">PA1 / ADC1_IN1</text>
-  <polygon fill="black" points="100,42 90,60 110,60" stroke="none"/>
-  <text fill="black" font-family="sans-serif" font-size="16" text-anchor="middle" x="100" y="32">3V3</text>
+  <polygon fill="black" points="250,42 240,60 260,60" stroke="none"/>
+  <text fill="black" font-family="sans-serif" font-size="16" text-anchor="middle" x="250" y="32">3V3</text>
   <line stroke="black" stroke-linecap="round" stroke-width="2" x1="250" x2="250" y1="500" y2="512"/>
   <line stroke="black" stroke-linecap="round" stroke-width="2" x1="232.0" x2="268.0" y1="512" y2="512"/>
   <line stroke="black" stroke-linecap="round" stroke-width="2" x1="238.0" x2="262.0" y1="520" y2="520"/>

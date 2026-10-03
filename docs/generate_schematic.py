@@ -135,7 +135,7 @@ def main():
         q2 = BJT(kind="npn", orient="v", name="Q2", value="BC547", c=(400, 200))
         t1_collector, t1_emitter = draw_phototransistor(schematic, (350, 400))
         stm32 = Box(
-            i=(700, 200),
+            i=(550, 200),
             name="STM32F103C8T6",
             value="PA1 (ADC1_IN1)",
             w=5,
@@ -148,18 +148,16 @@ def main():
         Wire([(100, 200), (100, 300)])
         Wire([(100, 250), q2.b])
         Wire([(100, 400), (100, 500), (400, 500)])
-        Wire([(100, 100), (100, 60)])
+        Wire([(250, 100), (250, 60)])
 
         Wire([q2.e, t1_collector])
         Wire([t1_emitter, (t1_emitter[0], 500)])
         Wire([q2.c, stm32.i])
 
-        Dot(C=(100, 100))
+        Dot(C=(250, 100))
         Dot(C=(100, 250))
         Dot(C=q2.c)
-        Dot(C=(t1_emitter[0], 500))
-        add_label(schematic, "PA1 / ADC1_IN1", (550, 180))
-        add_power_symbol(schematic, (100, 100))
+        add_power_symbol(schematic, (250, 100))
         add_ground_symbol(schematic, (250, 500))
 
 
