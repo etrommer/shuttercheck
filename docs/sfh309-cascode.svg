@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:ev="http://www.w3.org/2001/xml-events" xmlns:xlink="http://www.w3.org/1999/xlink" baseProfile="full" height="100%" version="1.1" viewBox="3.0,53.0,1241.0,516.0" width="100%">
+  <defs/>
+  <g id="bkgnd">
+    <rect fill="white" height="516.0" stroke="none" stroke-width="1" width="1241.0" x="3.0" y="53.0"/>
+  </g>
+  <g id="symbol" transform="translate(100,150.0) rotate(-90)">
+    <rect fill="none" height="100" stroke="none" width="100" x="-50.0" y="-50.0"/>
+    <rect fill="white" height="8" stroke="none" width="92" x="-46.0" y="-4"/>
+    <polyline fill="none" points="-50.0,0 -30,0 -25,-10 -20,0 -20,0 -15,10 -10,0 -10,0 -5,-10 0,0 0,0 5,10 10,0 10,0 15,-10 20,0 20,0 25,10 30,0 50.0,0" stroke="black" stroke-linecap="round" stroke-width="2"/>
+  </g>
+  <g id="text">
+    <text fill="black" font-family="sans-serif" font-size="16" text-anchor="start" x="115.0" y="145.0">R1</text>
+    <text fill="black" font-family="sans-serif" font-size="16" text-anchor="start" x="115.0" y="167.8">10 kΩ</text>
+  </g>
+  <g id="symbol" transform="translate(100,350.0) rotate(-90)">
+    <rect fill="none" height="100" stroke="none" width="100" x="-50.0" y="-50.0"/>
+    <rect fill="white" height="8" stroke="none" width="92" x="-46.0" y="-4"/>
+    <polyline fill="none" points="-50.0,0 -30,0 -25,-10 -20,0 -20,0 -15,10 -10,0 -10,0 -5,-10 0,0 0,0 5,10 10,0 10,0 15,-10 20,0 20,0 25,10 30,0 50.0,0" stroke="black" stroke-linecap="round" stroke-width="2"/>
+  </g>
+  <g id="text">
+    <text fill="black" font-family="sans-serif" font-size="16" text-anchor="start" x="115.0" y="345.0">R2</text>
+    <text fill="black" font-family="sans-serif" font-size="16" text-anchor="start" x="115.0" y="367.8">10 kΩ</text>
+  </g>
+  <g id="symbol" transform="translate(400,150.0) rotate(-90)">
+    <rect fill="none" height="100" stroke="none" width="100" x="-50.0" y="-50.0"/>
+    <rect fill="white" height="8" stroke="none" width="92" x="-46.0" y="-4"/>
+    <polyline fill="none" points="-50.0,0 -30,0 -25,-10 -20,0 -20,0 -15,10 -10,0 -10,0 -5,-10 0,0 0,0 5,10 10,0 10,0 15,-10 20,0 20,0 25,10 30,0 50.0,0" stroke="black" stroke-linecap="round" stroke-width="2"/>
+  </g>
+  <g id="text">
+    <text fill="black" font-family="sans-serif" font-size="16" text-anchor="start" x="415.0" y="145.0">RL</text>
+    <text fill="black" font-family="sans-serif" font-size="16" text-anchor="start" x="415.0" y="167.8">10 kΩ</text>
+  </g>
+  <g id="symbol" transform="translate(550.0,200)">
+    <rect fill="none" height="100" stroke="none" width="100" x="-50.0" y="-50.0"/>
+    <rect fill="white" height="8" stroke="none" width="92" x="-46.0" y="-4"/>
+    <polyline fill="none" points="-50.0,0 -30,0 -25,-10 -20,0 -20,0 -15,10 -10,0 -10,0 -5,-10 0,0 0,0 5,10 10,0 10,0 15,-10 20,0 20,0 25,10 30,0 50.0,0" stroke="black" stroke-linecap="round" stroke-width="2"/>
+  </g>
+  <g id="text">
+    <text fill="black" font-family="sans-serif" font-size="16" text-anchor="middle" x="550.0" y="180">RS</text>
+    <text fill="black" font-family="sans-serif" font-size="16" text-anchor="middle" x="550.0" y="232.8">100 Ω</text>
+  </g>
+  <g id="symbol" transform="translate(350.0,250.0)">
+    <rect fill="none" height="100" stroke="none" width="100" x="-50.0" y="-50.0"/>
+    <rect fill="white" height="92" stroke="none" width="8" x="46.0" y="-46.0"/>
+    <polyline fill="none" points="50.0,-50.0 50.0,-37.5 0,-25.0 0,25.0 50.0,37.5 50.0,50.0" stroke="black" stroke-linecap="round" stroke-width="2"/>
+    <line fill="none" stroke="black" stroke-linecap="square" stroke-width="6" x1="0" x2="0" y1="-37.5" y2="37.5"/>
+    <line fill="none" stroke="black" stroke-linecap="round" stroke-width="2" x1="-50.0" x2="0" y1="0" y2="0"/>
+    <polygon fill="black" points="10.0,19.0 40.0,25.0 10.0,31.0" stroke="none" transform="rotate(14.036243467926477,0,25.0)"/>
+  </g>
+  <g id="text">
+    <text fill="black" font-family="sans-serif" font-size="16" text-anchor="start" x="355.0" y="245.0">Q2</text>
+    <text fill="black" font-family="sans-serif" font-size="16" text-anchor="start" x="355.0" y="267.8">BC547</text>
+  </g>
+  <g id="symbol" transform="translate(550.0,350.0)">
+    <rect fill="none" height="100" stroke="none" width="100" x="-50.0" y="-50.0"/>
+    <rect fill="white" height="92" stroke="none" width="8" x="46.0" y="-46.0"/>
+    <polyline fill="none" points="50.0,-50.0 50.0,-37.5 0,-25.0 0,25.0 50.0,37.5 50.0,50.0" stroke="black" stroke-linecap="round" stroke-width="2"/>
+    <line fill="none" stroke="black" stroke-linecap="square" stroke-width="6" x1="0" x2="0" y1="-37.5" y2="37.5"/>
+    <line fill="none" stroke="black" stroke-linecap="round" stroke-width="2" x1="-50.0" x2="0" y1="0" y2="0"/>
+    <polygon fill="black" points="10.0,19.0 40.0,25.0 10.0,31.0" stroke="none" transform="rotate(14.036243467926477,0,25.0)"/>
+  </g>
+  <g id="text">
+    <text fill="black" font-family="sans-serif" font-size="16" text-anchor="start" x="555.0" y="345.0">T1</text>
+    <text fill="black" font-family="sans-serif" font-size="16" text-anchor="start" x="555.0" y="367.8">SFH309 FA</text>
+  </g>
+  <rect fill="white" height="20" stroke="none" width="55" x="495" y="340"/>
+  <g id="symbol" transform="translate(800,250.0)">
+    <rect fill="none" height="100" stroke="none" width="100" x="-50.0" y="-50.0"/>
+    <rect fill="white" height="92" stroke="none" width="8" x="-4" y="-46.0"/>
+    <line fill="none" stroke="black" stroke-linecap="round" stroke-width="2" x1="0" x2="0" y1="-50.0" y2="-7.5"/>
+    <line fill="none" stroke="black" stroke-linecap="round" stroke-width="2" x1="0" x2="0" y1="2.5" y2="50.0"/>
+    <line fill="none" stroke="black" stroke-linecap="round" stroke-width="2" x1="-20.0" x2="20.0" y1="-7.5" y2="-7.5"/>
+    <path d="M -20.0 7.5 c 10.0 -7.5 30.0 -7.5 40 0" fill="none" stroke="black" stroke-linecap="round" stroke-width="2"/>
+  </g>
+  <g id="text">
+    <text fill="black" font-family="sans-serif" font-size="16" text-anchor="start" x="805" y="235.0">C1</text>
+    <text fill="black" font-family="sans-serif" font-size="16" text-anchor="start" x="805" y="277.8">1 nF (optional)</text>
+  </g>
+  <g id="symbol" transform="translate(1025.0,200)">
+    <rect fill="none" height="100" stroke="none" width="250" x="-125.0" y="-50.0"/>
+    <rect fill="lightgray" height="100" stroke="black" stroke-width="2" width="250" x="-125.0" y="-50.0"/>
+  </g>
+  <g id="text">
+    <text fill="black" font-family="sans-serif" font-size="16" text-anchor="middle" x="1025.0" y="186">STM32F103C8T6</text>
+    <text fill="black" font-family="sans-serif" font-size="16" text-anchor="middle" x="1025.0" y="226.8">PA1 (ADC1_IN1)</text>
+  </g>
+  <g id="wire">
+    <polyline fill="none" points="100,100 400,100" stroke="black" stroke-linecap="round" stroke-width="2"/>
+  </g>
+  <g id="wire">
+    <polyline fill="none" points="100,200 100,300" stroke="black" stroke-linecap="round" stroke-width="2"/>
+  </g>
+  <g id="wire">
+    <polyline fill="none" points="100,250 300.0,250.0" stroke="black" stroke-linecap="round" stroke-width="2"/>
+  </g>
+  <g id="wire">
+    <polyline fill="none" points="100,400 100,450 800,450" stroke="black" stroke-linecap="round" stroke-width="2"/>
+  </g>
+  <g id="wire">
+    <polyline fill="none" points="400.0,300.0 600.0,300.0" stroke="black" stroke-linecap="round" stroke-width="2"/>
+  </g>
+  <g id="wire">
+    <polyline fill="none" points="600.0,400.0 600,450" stroke="black" stroke-linecap="round" stroke-width="2"/>
+  </g>
+  <g id="wire">
+    <polyline fill="none" points="400.0,200.0 500.0,200" stroke="black" stroke-linecap="round" stroke-width="2"/>
+  </g>
+  <g id="wire">
+    <polyline fill="none" points="600.0,200 800,200.0 900.0,200" stroke="black" stroke-linecap="round" stroke-width="2"/>
+  </g>
+  <g id="wire">
+    <polyline fill="none" points="800,300.0 800,450" stroke="black" stroke-linecap="round" stroke-width="2"/>
+  </g>
+  <g id="symbol" transform="translate(100,250)">
+    <rect fill="none" height="50" stroke="none" width="50" x="-25.0" y="-25.0"/>
+    <circle cx="0" cy="0" fill="black" r="4" stroke="black" stroke-width="2"/>
+  </g>
+  <g id="text"/>
+  <g id="symbol" transform="translate(400.0,200.0)">
+    <rect fill="none" height="50" stroke="none" width="50" x="-25.0" y="-25.0"/>
+    <circle cx="0" cy="0" fill="black" r="4" stroke="black" stroke-width="2"/>
+  </g>
+  <g id="text"/>
+  <g id="symbol" transform="translate(600.0,200)">
+    <rect fill="none" height="50" stroke="none" width="50" x="-25.0" y="-25.0"/>
+    <circle cx="0" cy="0" fill="black" r="4" stroke="black" stroke-width="2"/>
+  </g>
+  <g id="text"/>
+  <text fill="black" font-family="sans-serif" font-size="16" text-anchor="middle" x="700" y="180">PA1 / ADC1_IN1</text>
+  <text fill="black" font-family="sans-serif" font-size="16" text-anchor="middle" x="160" y="90">3V3</text>
+  <text fill="black" font-family="sans-serif" font-size="16" text-anchor="middle" x="190" y="230">V_bias ≈ 1.65 V</text>
+  <line stroke="black" stroke-linecap="round" stroke-width="2" x1="535" x2="555" y1="270" y2="290"/>
+  <polyline fill="none" points="546,288 555,290 553,281" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/>
+  <line stroke="black" stroke-linecap="round" stroke-width="2" x1="535" x2="555" y1="292" y2="312"/>
+  <polyline fill="none" points="546,310 555,312 553,303" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/>
+  <g id="symbol" transform="translate(400,450)">
+    <rect fill="none" height="50" stroke="none" width="50" x="-25.0" y="-25.0"/>
+    <polyline fill="white" points="0,0 20.0,0 0,20.0 -20.0,0 0,0" stroke="black" stroke-linecap="round" stroke-width="2"/>
+  </g>
+  <g id="text"/>
+</svg>
