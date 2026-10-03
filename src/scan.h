@@ -12,15 +12,29 @@
 
 namespace scan {
 
+// Signal direction at PA1 (issue 10).
+//
+// The cascode front end inverts: with the shutter closed the cell is dark and
+// the cascode output rests at the top of the ADC range, near full scale. With
+// the shutter open the lit cell pulls the output down to V_bias, near
+// 3.3 V / 2. The direct-coupled front end is the other way round.
+//
+// The polarity is a template parameter of scan(), never a run-time value, so
+// the direction costs no cycles in the measurement loop (issue 10, 1a).
+enum class Polarity : uint8_t {
+  kDarkHigh = 0,  // Dark is the high plateau. The cascode front end.
+  kDarkLow = 1,   // Dark is the low plateau. The direct-coupled front end.
+};
+
 // Samples per scanned chunk (== one DMA buffer half). The scan of one chunk
 // must finish well inside its 1.024 ms period (design invariant 7).
 constexpr uint32_t kChunkSamples = 512;
 
 enum class Status : uint8_t {
-  kOk = 0,       // one rising + one falling crossing, verified plateaus.
-  kStale = 1,    // a falling crossing arrived without a rising crossing.
-  kClipped = 2,  // bright plateau within 32 LSB of full scale.
-  kWeak = 3,     // bright-dark span below the 48 LSB noise floor.
+  kOk = 0,       // one opening + one closing crossing, verified plateaus.
+  kStale = 1,    // a crossing arrived without its partner of the same pulse.
+  kClipped = 2,  // the rail-side plateau came within 32 LSB of full scale.
+  kWeak = 3,     // plateau span below the 48 LSB noise floor.
 };
 
 inline const char* statusName(Status s) {
@@ -55,14 +69,16 @@ struct State {
   int32_t dark;          // Dark plateau EMA value (LSB).
   int32_t bright;        // Bright plateau EMA value (LSB).
   int32_t scanThr;       // Threshold locked for the in-progress pulse.
-  int64_t riseNs;        // Rising crossing time (ns) of the pulse in flight.
+  int64_t riseNs;        // Opening crossing time (ns) of the pulse in flight.
   uint64_t nextIndex;    // Absolute sample index of the next sample.
   uint8_t havePrev;      // prev is valid.
   uint8_t initDark;      // dark plateau initialized.
   uint8_t initBright;    // bright plateau initialized.
-  uint8_t inPulse;       // A pulse is open; expect the falling edge.
+  uint8_t inPulse;       // A pulse is open; expect the closing crossing.
   uint8_t prevInBand;    // prev lay inside the hysteresis band.
-  uint8_t hitRail;       // This pulse's bright samples reached near full scale.
+  uint8_t hitRail;       // A raw sample of the rail-side plateau (which one
+                         // depends on Polarity) came within kClippedMargin of
+                         // full scale.
 };
 
 void initState(State* s);
@@ -75,6 +91,9 @@ void fifoPush(ResultFifo* f, const Result& r);
 // in time order. The DMA may fill the other half while this one is scanned;
 // this half is quiescent, so a plain `const uint16_t*` is sufficient.
 // Finished measurements go into `fifo`.
+// `P` names the signal direction at PA1. The firmware compiles only the
+// instantiation that matches its wiring; the native tests compile both.
+template <Polarity P>
 void scan(const uint16_t* samples, uint32_t count, State* s,
           ResultFifo* fifo);
 

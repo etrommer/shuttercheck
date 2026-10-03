@@ -41,17 +41,20 @@ and the design invariants.
    The firmware tracks the **dark plateau** (between
    pulses) and the **bright plateau** (during the pulse). It crosses at their
    midpoint. A software hysteresis band stops noise from faking an edge. The
-   band is max(8 LSB, one sixteenth of the bright−dark span). A pulse re-arms
-   only after the signal falls back to the low band edge. The firmware
+   band is max(8 LSB, one sixteenth of the plateau span). A pulse re-arms
+   only after the signal returns to the dark-side band edge. The firmware
    estimates the plateaus from samples that are not in a crossing pair and not
    in the band. The *crossing algorithm* section below walks through this
    detection step by step.
-5. **Exposure.** The exposure is `t_cross(falling) − t_cross(rising)`. A
-   sample is valid only if it has exactly one rising and one falling crossing.
-   There are two rejection paths:
-   - `clipped`: the bright plateau is within 32 LSB of full scale. The front
-     end is saturated. The comparator design cannot see this fault.
-   - `weak`: the bright−dark span is less than 48 LSB (≈40 mV). The midpoint
+5. **Exposure.** The exposure is the closing crossing time minus the opening
+   crossing time. A sample is valid only if it has exactly one opening and one
+   closing crossing. The crossing direction follows the polarity: with this
+   inverting front end the shutter opens on the falling crossing and closes on
+   the rising one. There are two rejection paths:
+   - `clipped`: the rail-side plateau came within 32 LSB of full scale. With
+     this front end that is the dark plateau. The front end is saturated. The
+     comparator design cannot see this fault.
+   - `weak`: the plateau span is less than 48 LSB (≈40 mV). The midpoint
      would be noise.
 
 There is **no range state machine**. One constant 500 kS/s grid covers all
@@ -67,10 +70,18 @@ speeds. At 1/4000 the pulse still gets ~125 samples for the interpolation. A
 Rated spec: **1/4000 … 6 s**. Faster speeds show correctly if the edges
 resolve. But they are outside the accuracy budget below.
 
-Polarity convention: dark gives a low voltage on PA1, light gives a high
-voltage. The rising crossing is the shutter opening. The falling crossing is
-the shutter closing. The phototransistor is an emitter follower. Thus the
-front end is non-inverting.
+**Polarity convention.** The sensor head is a **cascode stage**, and it
+inverts the signal: with the shutter closed the cell is dark and the cascode
+output rests near the top of the ADC range, at about full scale. With the
+shutter open the lit cell pulls the output down to V_bias, near 3.3 V / 2, so
+about half scale. **Dark is the high plateau and light is the low plateau.**
+The shutter therefore opens on a falling crossing and closes on a rising one.
+
+The polarity is a compile-time constant of the scan (`Polarity::kDarkHigh` in
+`src/capture.cpp`). Nothing in the measurement path costs a cycle for it: the
+firmware calls the scan as a template, so the direction is resolved by the
+compiler. The native tests run every case in both directions, so the
+direct-coupled front end stays supported by the same code path.
 
 ### The crossing algorithm
 
@@ -86,14 +97,16 @@ The scan carries state across buffer chunks:
 | previous sample    | The last sample of the previous chunk            |
 | dark plateau       | The EMA estimate of the dark level               |
 | bright plateau     | The EMA estimate of the bright level             |
-| locked threshold   | The threshold of the open pulse, fixed at its rise |
-| opening time       | The interpolated time of the rising crossing     |
-| rail latch         | A bright raw sample reached near full scale during the open pulse |
+| locked threshold   | The threshold of the open pulse, fixed at its opening crossing |
+| opening time       | The interpolated time of the opening crossing    |
+| rail latch         | A raw sample of the rail-side plateau reached near full scale |
 | absolute index     | The sample number over the whole capture         |
 
 **Boot.** The first sample seeds the dark plateau. The shutter is closed at
 power-on. Thus the first sample is the dark level. The bright plateau starts
-16 LSB above it. The first real pulse then raises the bright estimate.
+16 LSB away from it, on the side where the lit plateau will lie: below it for
+this inverting front end. The first real pulse then pulls the bright estimate
+to the lit level.
 
 **The plateaus.** The firmware estimates a plateau with a moving average:
 
@@ -104,10 +117,11 @@ value = value + (sample − value) / 64
 The division truncates. Thus the estimate moves in integer steps. Each
 accepted sample moves the estimate one sixty-fourth of the way to the sample.
 A noise tick of a few LSB moves the estimate by almost nothing. The previous
-sample enters the dark estimate only when it lies below the low band edge. It
-enters the bright estimate only when it lies above the high band edge.
-Samples in the band and samples in a crossing pair are excluded: they belong
-to neither plateau.
+sample enters the estimate of the plateau it sits on: the low plateau when it
+lies below the low band edge, the high plateau when it lies above the high
+band edge. Which of the two is the dark plateau follows the polarity. Samples
+in the band and samples in a crossing pair are excluded: they belong to
+neither plateau.
 
 **The band.** The threshold is the midpoint of the two estimates:
 
@@ -115,30 +129,36 @@ to neither plateau.
 thr = (dark + bright) / 2
 ```
 
-The hysteresis band is `max(8 LSB, (bright − dark) / 16)`. The band edges
-sit at `thr ± band/2`. The band has two jobs. It stops noise from faking a
-rise: a rising edge needs a step of at least half the band. It keeps the
+The hysteresis band is `max(8 LSB, plateau span / 16)`, where the span is the
+distance between the two estimates and thus always positive. The band edges
+sit at `thr ± band/2`. The band has two jobs. It stops noise from faking an
+edge: a crossing needs a step of at least half the band. It keeps the
 plateaus clean: only samples clearly on one side of the band feed an
 estimate.
 
 **The edges.** A crossing needs the previous sample on one side and the new
-sample on the other side of the threshold.
+sample on the other side of the threshold. The two directions are named by the
+signal, not by the shutter: `kUp` and `kDown`. The shutter opens on the
+crossing that leaves the dark plateau. With this inverting front end that is
+the downward crossing; with a direct-coupled front end it is the upward one.
 
-- **Rising (shutter opens).** The previous sample must lie at or below the
-  low band edge, and the new sample must reach the threshold. The low-edge
-  condition is the re-arm: a rise can fire only after the signal came back
-  below the band. At the rise, the firmware locks the threshold for this
-  pulse and records the interpolated opening time.
-- **Falling (shutter closes).** While a pulse is open, the new sample must
-  fall below the locked threshold. The firmware interpolates the closing
-  time and computes the exposure:
+- **Opening (shutter opens).** The previous sample must lie beyond the band
+  edge on the dark side, and the new sample must reach the threshold from the
+  light side. The band-edge condition is the re-arm: the opening can fire only
+  after the signal returned to the dark plateau. At the opening, the firmware
+  locks the threshold for this pulse and records the interpolated opening
+  time.
+- **Closing (shutter closes).** While a pulse is open, the signal must cross
+  back through the locked threshold onto the dark side. The firmware
+  interpolates the closing time and computes the exposure:
 
   ```
   exposure = closing time − opening time
   ```
 
-- **Stale.** A falling pattern with no open pulse is a lone falling
-  crossing. The firmware reports `stale` and drops it.
+- **Stale.** A crossing with no open pulse is a lone edge. The firmware
+  reports `stale` and drops it. With this front end the lone edge is the
+  rising one, because that is the direction back to dark.
 
 Both crossing times come from the interpolation formula in step 4.
 
@@ -148,14 +168,17 @@ threshold. The locked threshold crosses both edges at the same fraction of
 the swing. Measurement between equal-fraction crossings cancels the shape of
 the optical edge. See the plateau estimation row in Accuracy above.
 
-**Validity and rejections.** A sample is valid only when exactly one rising
-and one falling crossing close one pulse. Two rejection paths remain.
+**Validity and rejections.** A sample is valid only when exactly one opening
+and one closing crossing close one pulse. Two rejection paths remain.
 
-- `clipped`: while a pulse is open, any raw sample at or above 4063 (full
-  scale minus 32) latches the rail flag. The firmware checks the raw samples,
-  not the bright estimate. The integer estimate stalls about 64 LSB below a
-  constant level. Thus it can never enter the 32 LSB rail zone by itself.
-- `weak`: the bright−dark span is below 48 LSB.
+- `clipped`: a raw sample of the rail-side plateau at or above 4063 (full
+  scale minus 32) latches the rail flag. The rail side is the dark plateau
+  for this front end, and its samples arrive while the shutter is closed,
+  before the pulse opens. The flag is released when the pulse closes. The
+  firmware checks the raw samples, not the plateau estimate. The integer
+  estimate stalls about 64 LSB below a constant level. Thus it can never enter
+  the 32 LSB rail zone by itself.
+- `weak`: the plateau span is below 48 LSB.
 
 Rejected pulses print `0 clipped` or `0 weak`.
 
@@ -179,10 +202,10 @@ then a status.
 
 | Status    | Meaning                                                              |
 |-----------|----------------------------------------------------------------------|
-| `ok`      | One rising + one falling crossing, verified plateaus; count is final |
-| `stale`   | A falling crossing arrived without a rising crossing of its own pulse |
-| `clipped` | Bright plateau within 32 LSB of full scale: saturated front end; discarded |
-| `weak`    | Bright−dark span below the noise floor; the threshold would be meaningless; discarded |
+| `ok`      | One opening + one closing crossing, verified plateaus; count is final |
+| `stale`   | A crossing arrived without its partner of the same pulse             |
+| `clipped` | The rail-side plateau came within 32 LSB of full scale: saturated front end; discarded |
+| `weak`    | Plateau span below the noise floor; the threshold would be meaningless; discarded |
 
 The LED on PB12 gives one short flash for each accepted sample. It stays dark
 for a rejection. `2481234 ns` = 2.481 ms ≈ 1/403 s. Send the output to any
@@ -193,15 +216,23 @@ serial terminal (`pio device monitor`). No host-side software is necessary.
 | Part | Notes |
 |------|-------|
 | Black Pill board with [STM32F103C8T6](https://www.st.com/en/microcontrollers-microprocessors/stm32f103c8.html) | 64 KiB flash. For a 128 KiB clone, build the `blackpill_f103c8_128` env |
-| [SFH 309 FA](https://ams-osram.com/products/photodetectors/phototransistors/osram-radial-t1-sfh-309-fa) phototransistor ([datasheet](https://look.ams-osram.com/m/48f3c58ae57c5dfc/original/SFH-309.pdf)) | Si NPN, T1 3 mm radial. Point the lens at the shutter |
+| SFH 309 FA phototransistor ([datasheet](https://look.ams-osram.com/m/48f3c58ae57c5dfc/original/SFH-309.pdf)) and its cascode stage | Si NPN, T1 3 mm radial. Point the lens at the shutter. The cascode stage inverts the signal, see *Polarity convention* above |
 | [ST-Link/V2](https://www.st.com/en/development-tools/st-link-v2.html) programmer | Flashes the board over SWD. Any STM32 SWD probe works |
 | `R_E` 1 kΩ, series 100 Ω, 1 nF (optional) | The series resistor is mandatory. The capacitor filters HF noise only |
 | USB cable, board 3V3/GND | The board supplies the front end. Keep 5 V away from PA1 |
 
+The firmware needs only two things from the sensor head: the two plateau
+levels and which of them is the dark one. The head in use adds a cascode
+stage between the sensor node and PA1, to get the response speed it needs.
+That stage inverts the signal. The wiring table below is the direct-coupled
+head (emitter follower, non-inverting). The firmware handles both through one
+compile-time constant, `Polarity::kDarkHigh` for the inverting head.
+
 ## Wiring
 
 The complete front end operates from **3V3**. Keep 5 V away from the MCU pin.
-PA1 is an ADC pin. Never let the node go above 3V3 + 0.3 V.
+PA1 is an ADC pin. Never let the node go above 3V3 + 0.3 V. The cascode stage
+must stay inside that range at both plateaus.
 
 | From                        | To                                | Notes |
 |-----------------------------|-----------------------------------|-------|
@@ -225,18 +256,23 @@ Build the sensor head first. Then wire it to the board. Then flash and check.
 7. Wire the ST-Link to SWD (3V3, GND, PA13 = SWDIO, PA14 = SWCLK) and flash with `pio run -t upload`.
 8. Connect the board USB to the PC and open `pio device monitor`. Expect the `shuttercheck exposure` header line.
 9. Point the lens at the shutter. The half angle is only ±12°. Shine a steady test light through the shutter at the sensor.
-10. Set the light level so the bright plateau stays between 0.3 V and 1 V. If the monitor prints `clipped`, dim the source. If it prints `weak`, add light.
+10. Set the light level so the lit plateau stays near V_bias (about half scale) and the dark plateau stays clear of full scale. If the monitor prints `clipped`, the dark plateau is at the rail: reduce the cascode gain or add a divider. If it prints `weak`, add light.
 11. Fire the shutter. Expect one `<exposure ns> ok` line and one LED flash per accepted sample.
 
 Front-end sizing:
 
-- **Keep the emitter plateau between 0.3 V and 1 V.** At 3 V the
-  phototransistor is saturated. `V_CEsat` is 200 mV and the stored base charge
-  delays the turn-off. Thus the closing edge reads late and fast exposures look
-  long. The ADC makes this failure visible, unlike the comparator design. The
-  firmware sees samples near full scale and prints `clipped`. Dim the source
-  (lens aperture, distance, diffuser) until the plateau reads well below full
-  scale.
+- **Keep the dark plateau below 4063 LSB.** With the inverting head the dark
+  plateau is the high one, so it is the plateau that can reach the ADC rail.
+  Within 32 LSB of full scale the firmware rejects every pulse as `clipped`,
+  because it cannot measure a plateau it cannot resolve. The cascode gain and
+  the bias network set this level. Keep about 100 LSB of headroom.
+- **Keep the lit plateau near V_bias.** V_bias is about 3.3 V / 2, so about
+  half scale. The midpoint threshold then sits between the two plateaus with
+  the full swing on both sides, which is what the interpolation needs.
+- **Keep the phototransistor out of saturation.** `V_CEsat` is 200 mV and the
+  stored base charge delays the turn-off. Thus the closing edge reads late and
+  fast exposures look long. The ADC makes this failure visible, unlike the
+  comparator design.
 - **Noise floor.** One LSB is 0.8 mV. The effective resolution of the F103 is
   closer to 9–10 bits. Thus the firmware rejects a plateau span below ~40 mV as
   `weak`. It does not report a meaningless midpoint.
@@ -313,8 +349,8 @@ Press reset to see it again.
 The `on_device_test` environment builds a firmware that tests itself. It
 starts the capture path, but it feeds the generated scan vectors to the scan
 instead of the ADC output. Thus it needs no sensor and no light. It checks the
-clock frequencies, the capture path, the USB connection and the eight scan
-cases, and it prints one line per check:
+clock frequencies, the capture path, the USB connection and the scan cases in
+both signal polarities, and it prints one line per check:
 
 ```sh
 python scripts/gen_test_data.py      # generate the scan vectors
@@ -331,9 +367,10 @@ PASS adcclk 12 MHz
 PASS usbclk 48 MHz
 PASS capture running
 PASS usb host connected
-PASS scan case 0
+PASS scan case 0 dark low
+PASS scan case 0 dark high
 ...
-PASS scan case 7
+PASS scan case 9 dark high
 ALL TESTS PASSED
 ```
 

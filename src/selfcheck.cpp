@@ -46,34 +46,38 @@ void checkClock(const char* name, uint32_t gotHz, uint32_t wantHz) {
   Serial.println();
 }
 
-// Runs one generated case and prints PASS or FAIL. A failure prints the
-// wanted and the measured results below the line.
-void checkCase(uint32_t idx) {
-  const testdata::Case& c = scancases::caseAt(idx);
-  const scancases::CaseRun r = scancases::run(idx);
+// Runs one generated case under one polarity and prints PASS or FAIL. A
+// failure prints the wanted and the measured results below the line.
+template <scan::Polarity P>
+void checkCasePolarity(uint32_t idx, bool darkHigh) {
+  const testdata::Expected* expected = scancases::expectedAt(idx, darkHigh);
+  const uint32_t expectedCount = scancases::expectedCountAt(idx, darkHigh);
+  const scancases::CaseRun r = scancases::run<P>(idx, darkHigh);
 
-  bool ok = r.gotCount == c.expectedCount;
-  for (uint32_t j = 0; ok && j < c.expectedCount; ++j) {
-    ok = r.got[j].present && r.got[j].ns == c.expected[j].ns &&
-         strcmp(r.got[j].status, c.expected[j].status) == 0;
+  bool ok = r.gotCount == expectedCount;
+  for (uint32_t j = 0; ok && j < expectedCount; ++j) {
+    ok = r.got[j].present && r.got[j].ns == expected[j].ns &&
+         strcmp(r.got[j].status, expected[j].status) == 0;
   }
 
   Serial.print(ok ? "PASS " : "FAIL ");
   Serial.print("scan case ");
-  Serial.println(idx);
+  Serial.print(idx);
+  Serial.print(' ');
+  Serial.println(scancases::polarityName(darkHigh));
   if (ok) {
     return;
   }
   ++g_failures;
 
   Serial.print("  want ");
-  Serial.print(c.expectedCount);
+  Serial.print(expectedCount);
   Serial.println(" result(s):");
-  for (uint32_t j = 0; j < c.expectedCount; ++j) {
+  for (uint32_t j = 0; j < expectedCount; ++j) {
     Serial.print("    ");
-    Serial.print(c.expected[j].ns);
+    Serial.print(expected[j].ns);
     Serial.print(' ');
-    Serial.println(c.expected[j].status);
+    Serial.println(expected[j].status);
   }
 
   Serial.print("  got ");
@@ -87,6 +91,12 @@ void checkCase(uint32_t idx) {
     Serial.print(' ');
     Serial.println(r.got[j].status);
   }
+}
+
+// One case, both front-end directions (issue 10).
+void checkCase(uint32_t idx) {
+  checkCasePolarity<scan::Polarity::kDarkLow>(idx, false);
+  checkCasePolarity<scan::Polarity::kDarkHigh>(idx, true);
 }
 
 // How long the report waits for a host to open the CDC port. USBSerial
