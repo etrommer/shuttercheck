@@ -6,7 +6,7 @@
 
 from pathlib import Path
 
-from svg_schematic import BJT, Box, Capacitor, Dot, Ground, Resistor, Schematic, Wire
+from svg_schematic import BJT, Box, Dot, Resistor, Schematic, Wire
 
 
 OUTPUT = Path(__file__).with_name("sfh309-cascode.svg")
@@ -49,6 +49,77 @@ def add_label(schematic, text, position):
     )
 
 
+def add_line(schematic, start, end):
+    schematic.add(
+        schematic.line(
+            start=start,
+            end=end,
+            stroke="black",
+            stroke_width=2,
+            stroke_linecap="round",
+        )
+    )
+
+
+def draw_phototransistor(schematic, center):
+    x, y = center
+    collector = (x + 50, y - 50)
+    emitter = (x + 50, y + 50)
+    schematic.add(
+        schematic.polyline(
+            [collector, (x + 50, y - 37.5), (x, y - 25)],
+            fill="none",
+            stroke="black",
+            stroke_width=2,
+            stroke_linecap="round",
+            stroke_linejoin="round",
+        )
+    )
+    add_line(schematic, (x, y - 37.5), (x, y + 37.5))
+    schematic.add(
+        schematic.polyline(
+            [(x, y + 25), (x + 50, y + 37.5), emitter],
+            fill="none",
+            stroke="black",
+            stroke_width=2,
+            stroke_linecap="round",
+            stroke_linejoin="round",
+        )
+    )
+    schematic.add(
+        schematic.polygon(
+            [(x + 11, y + 21), (x + 39, y + 35), (x + 8, y + 33)],
+            fill="black",
+            stroke="none",
+        )
+    )
+    add_light_arrow(schematic, (x - 70, y - 60), (x - 30, y - 30))
+    add_light_arrow(schematic, (x - 70, y - 25), (x - 30, y + 5))
+    add_label(schematic, "T1", (x + 75, y - 8))
+    add_label(schematic, "SFH309 FA", (x + 102, y + 13))
+    return collector, emitter
+
+
+def add_power_symbol(schematic, point):
+    x, y = point
+    schematic.add(
+        schematic.polygon(
+            [(x, y - 58), (x - 10, y - 40), (x + 10, y - 40)],
+            fill="black",
+            stroke="none",
+        )
+    )
+    add_label(schematic, "3V3", (x, y - 68))
+
+
+def add_ground_symbol(schematic, point):
+    x, y = point
+    add_line(schematic, point, (x, y + 12))
+    for bar_y, width in ((y + 12, 36), (y + 20, 24), (y + 28, 12)):
+        add_line(schematic, (x - width / 2, bar_y), (x + width / 2, bar_y))
+    add_label(schematic, "GND", (x + 48, y + 24))
+
+
 def main():
     with Schematic(
         filename=str(OUTPUT),
@@ -58,25 +129,13 @@ def main():
         dot_radius=4,
         pad=45,
     ) as schematic:
-        # Build the components first so the wires can use their pin coordinates.
         r1 = Resistor(orient="v", name="R1", value="10 kΩ", p=(100, 100))
         r2 = Resistor(orient="v", name="R2", value="10 kΩ", p=(100, 300))
         rl = Resistor(orient="v", name="RL", value="10 kΩ", n=(400, 200))
-        rs = Resistor(orient="h", name="RS", value="100 Ω", n=(500, 200))
         q2 = BJT(kind="npn", orient="v", name="Q2", value="BC547", c=(400, 200))
-        t1 = BJT(kind="npn", orient="v", name="T1", value="SFH309 FA", c=(600, 300))
-        # The SFH309 FA has no base lead; hide the generic BJT's base stub.
-        schematic.add(
-            schematic.rect(
-                insert=(495, 340),
-                size=(55, 20),
-                stroke="none",
-                fill="white",
-            )
-        )
-        c1 = Capacitor(orient="v", name="C1", value="1 nF (optional)", p=(800, 200))
+        t1_collector, t1_emitter = draw_phototransistor(schematic, (350, 400))
         stm32 = Box(
-            i=(900, 200),
+            i=(700, 200),
             name="STM32F103C8T6",
             value="PA1 (ADC1_IN1)",
             w=5,
@@ -85,33 +144,24 @@ def main():
             background="lightgray",
         )
 
-        # Supply and divider. The divider midpoint biases Q2's base.
         Wire([(100, 100), (400, 100)])
         Wire([(100, 200), (100, 300)])
         Wire([(100, 250), q2.b])
-        Wire([(100, 400), (100, 450), (800, 450)])
+        Wire([(100, 400), (100, 500), (400, 500)])
+        Wire([(100, 100), (100, 60)])
 
-        # Cascode path: Q2 emitter drives T1's collector; T1 emitter returns to ground.
-        Wire([q2.e, t1.c])
-        Wire([t1.e, (600, 450)])
+        Wire([q2.e, t1_collector])
+        Wire([t1_emitter, (t1_emitter[0], 500)])
+        Wire([q2.c, stm32.i])
 
-        # Q2 collector load and ADC interface.
-        Wire([q2.c, rs.n])
-        Wire([rs.p, c1.p, stm32.i])
-        Wire([c1.n, (800, 450)])
-
-        # Mark the supply, bias, and shared ground nodes.
+        Dot(C=(100, 100))
         Dot(C=(100, 250))
         Dot(C=q2.c)
-        Dot(C=rs.p)
-        add_label(schematic, "PA1 / ADC1_IN1", (700, 180))
-        add_label(schematic, "3V3", (160, 90))
-        add_label(schematic, "V_bias ≈ 1.65 V", (190, 230))
+        Dot(C=(t1_emitter[0], 500))
+        add_label(schematic, "PA1 / ADC1_IN1", (550, 180))
+        add_power_symbol(schematic, (100, 100))
+        add_ground_symbol(schematic, (250, 500))
 
-        # The library has a BJT symbol; the arrows identify T1 as a photosensor.
-        add_light_arrow(schematic, (535, 270), (555, 290))
-        add_light_arrow(schematic, (535, 292), (555, 312))
-        Ground(t=(400, 450))
 
 
 if __name__ == "__main__":

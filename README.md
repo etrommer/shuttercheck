@@ -232,8 +232,9 @@ R1 and R2 form an equal divider. Use 10 kΩ for each to set Q2's base to
 `V_bias` ≈ 1.65 V. Q2 is a BC547. It keeps the SFH 309 FA collector voltage
 nearly constant to improve its response speed. RL is 10 kΩ. It converts the
 collector current to an output voltage. Light pulls the output down toward
-`V_bias`. Use the 100 Ω series resistor between the output and PA1. C1 is an
-optional 1 nF capacitor from PA1 to GND. It filters high-frequency noise.
+`V_bias`. The drawing omits `RS` and `C1`. Fit the 100 Ω series resistor
+between the output and PA1. C1 is optional: use 1 nF from PA1 to GND to filter
+high-frequency noise.
 
 Regenerate the image with `uv run docs/generate_schematic.py`.
 
