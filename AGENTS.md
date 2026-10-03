@@ -50,8 +50,10 @@ rules only: workflow, layout, commands, platform facts, invariants.
   translation unit. It reads the path, not the registers, the same rule
   `selfcheck.cpp` follows. The print interval is a compile-time constant
   (`DEBUG_CHUNK_INTERVAL`); no run-time knob may reappear.
-  - `printf` of this toolchain has no long long width: `%lld` prints `ld`, so
-    `debug.cpp` formats 64-bit values itself. Never use `%lld` here.
+  The native env always defines `SHUTTERCHECK_DEBUG`, so `pio test -e native`
+  covers the debug fields of the scan too. `printf` of this toolchain has no
+  long long width: `%lld` prints `ld`, so `debug.cpp` formats 64-bit values
+  itself. Never use `%lld` here.
 - `test/scan_cases.h` — feeds one generated case through the scan and records
   what came out. Free of Unity and of the HAL, so `test/test_scan.cpp`
   (native, asserts with Unity) and `src/selfcheck.cpp` (on device, prints
@@ -72,6 +74,7 @@ rules only: workflow, layout, commands, platform facts, invariants.
 
 ```sh
 pio run                      # build
+pio test -e native           # native scan unit tests (always with SHUTTERCHECK_DEBUG)
 pio run -t upload            # flash (ST-Link over SWD)
 pio run -t clean
 pio device monitor           # read reports on the USB CDC port
@@ -79,7 +82,6 @@ pio run -t upload -e blackpill_f103c8_128   # 128 KiB clone
 python scripts/on_device_test.py            # flash the self test, read its report
 pio run -e debug            # build the debug env (issue 12: prints the capture and scan state)
 pio run -e debug -t upload  # flash it
-pio test -e native_debug    # native scan tests with SHUTTERCHECK_DEBUG on
 ```
 
 - `pio run -t upload` ends with an OpenOCD reset. The board runs the new

@@ -38,7 +38,6 @@ void runCase(uint32_t idx) {
 
 }  // namespace
 
-#if defined(SHUTTERCHECK_DEBUG)
 // The debug extremes of a chunk (issue 12). The extremes must cover the
 // whole chunk, also the runs that skipQuietRun() skips.
 constexpr uint16_t kFlatSample = 1234;   // One flat plateau, case B.
@@ -119,7 +118,6 @@ void test_debug_extremes_of_a_skipped_in_band_chunk() {
   TEST_ASSERT_EQUAL_INT32(2889, out.debugMin);
   TEST_ASSERT_EQUAL_INT32(2900, out.debugMax);
 }
-#endif  // defined(SHUTTERCHECK_DEBUG)
 
 void test_case0_clean_1_1000() { runCase(0); }
 void test_case1_clean_1_4000() { runCase(1); }
@@ -134,12 +132,10 @@ void test_case9_cascode_operating_point() { runCase(9); }
 
 int main() {
   UNITY_BEGIN();
-#if defined(SHUTTERCHECK_DEBUG)
   RUN_TEST(test_debug_extremes_of_a_skipped_flat_chunk);
   RUN_TEST(test_debug_extremes_of_a_chunk_with_a_step);
   RUN_TEST(test_debug_extremes_reset_per_chunk);
   RUN_TEST(test_debug_extremes_of_a_skipped_in_band_chunk);
-#endif
   RUN_TEST(test_case0_clean_1_1000);
   RUN_TEST(test_case1_clean_1_4000);
   RUN_TEST(test_case2_crossing_across_chunk);
