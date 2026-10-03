@@ -137,7 +137,10 @@ bool processNextHalf() {
   g_readyHalf = 2;  // Consume the handshake so this half is scanned once.
   // The half is quiescent here: the circular DMA is filling the other half,
   // so the scan reads it at thread priority as a plain array.
-  scan::scan(&buffer[idx * kHalfSamples], kHalfSamples, &g_state, &g_fifo);
+  // The polarity is a template parameter (issue 10): this build drives the
+  // cascode front end, which is inverting, so dark is the high plateau.
+  scan::scan<scan::Polarity::kDarkHigh>(&buffer[idx * kHalfSamples],
+                                       kHalfSamples, &g_state, &g_fifo);
   return true;
 }
 

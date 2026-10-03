@@ -31,10 +31,12 @@ rules only: workflow, layout, commands, platform facts, invariants.
   ISR saturates the CPU and starves USB-CDC enumeration. Let `scan()` run at
   thread priority where the USB interrupt can preempt it.
 - `src/scan.cpp` / `src/scan.h` — the crossing scan, exposure measurement and
-  the result FIFO. Pure integer, stdint only, free of HAL and Arduino: the
-  native unit tests (`pio test -e native`) compile it directly, so it must
-  not pull in firmware-only headers. Keep it separate from reporting so the
-  scan timing stays obvious.
+  the result FIFO. `scan()` is a template on `scan::Polarity`: the signal
+  direction is a compile-time constant, so it costs no cycle in the hot loop.
+  Pure integer, stdint only, free of HAL and Arduino: the native unit tests
+  (`pio test -e native`) compile it directly, so it must not pull in
+  firmware-only headers. Keep it separate from reporting so the scan timing
+  stays obvious.
 - `src/selfcheck.cpp` / `src/selfcheck.h` — the on-device self test (issue 8),
   compiled only into `ON_DEVICE_TEST` builds. It asks the HAL and the capture
   path for the peripheral state and runs the generated scan cases; it reads no
@@ -42,7 +44,8 @@ rules only: workflow, layout, commands, platform facts, invariants.
 - `test/scan_cases.h` — feeds one generated case through the scan and records
   what came out. Free of Unity and of the HAL, so `test/test_scan.cpp`
   (native, asserts with Unity) and `src/selfcheck.cpp` (on device, prints
-  PASS/FAIL) share one feeder and one set of expectations.
+  PASS/FAIL) share one feeder and one set of expectations. Each case runs in
+  both polarities: the generated stream, then its mirror.
 - Use the STM32 HAL where possible. Go below the HAL only where the F1 HAL
   does not reach, and say why in a comment.
 
@@ -97,17 +100,18 @@ python scripts/on_device_test.py            # flash the self test, read its repo
    conversion.
 4. Threshold: the midpoint of the two tracked plateaus, with a hysteresis
    band. No trimpot-equivalent knob may reappear.
-5. A sample is valid only if exactly one rising and one falling crossing
-   belong to the same excursion. A lone falling crossing is `stale` and is
-   dropped.
+5. A sample is valid only if exactly one opening and one closing crossing
+   belong to the same excursion. A lone crossing is `stale` and is dropped.
 6. Conservative failure: the rejection paths are `clipped` and `weak`. Never
    print a value the firmware has not verified.
 7. The scan of one buffer chunk must finish well inside that chunk's period.
    Report from `loop()` only, never from an ISR, through a small result FIFO.
 8. Integer math only in the measurement path. Carry widths in nanoseconds in a
    64-bit accumulator; no floats, no `millis()`/`micros()`.
-9. Dark → low voltage at PA1, light → high. Rising crossing = shutter opens,
-   falling = shutter closes.
+9. The signal direction at PA1 is a compile-time constant, `scan::Polarity`,
+   and never a runtime value. The head in use is a cascode stage: it inverts,
+   so dark → high voltage at PA1, light → low (V_bias). The shutter opens on
+   the crossing that leaves the dark plateau.
 10. One short flash on PB12 per accepted sample; nothing on rejection.
 
 ## Verification policy
