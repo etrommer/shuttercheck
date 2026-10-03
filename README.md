@@ -300,6 +300,57 @@ shuttercheck exposure
 2481234 ok
 ```
 
+The upload ends with an OpenOCD reset. Thus the board runs the new firmware at
+once. Without that reset the core stays halted after the flash: the board still
+enumerates on USB, but it runs nothing until you press reset.
+
+The header goes out at boot. The CDC port drops everything it sends before a
+host opens the port. Thus you miss the header when you open the monitor later.
+Press reset to see it again.
+
+### On-device self test
+
+The `on_device_test` environment builds a firmware that tests itself. It
+starts the capture path, but it feeds the generated scan vectors to the scan
+instead of the ADC output. Thus it needs no sensor and no light. It checks the
+clock frequencies, the capture path, the USB connection and the eight scan
+cases, and it prints one line per check:
+
+```sh
+python scripts/gen_test_data.py      # generate the scan vectors
+pio run -e on_device_test -t upload  # build and flash
+pio device monitor                   # read the report
+```
+
+```
+PASS sysclk 72 MHz
+PASS hclk 72 MHz
+PASS pclk1 36 MHz
+PASS pclk2 72 MHz
+PASS adcclk 12 MHz
+PASS usbclk 48 MHz
+PASS capture running
+PASS usb host connected
+PASS scan case 0
+...
+PASS scan case 7
+ALL TESTS PASSED
+```
+
+The LED blinks forever when a check fails. It stays dark when everything
+passes. The report waits up to 10 s for a host to open the CDC port. Open the
+port, or press reset, inside that window.
+
+One command does all of it. It builds, flashes, reads the report and exits
+non-zero on a failure or on a timeout. It needs the board on SWD and on USB,
+and Python [pyserial](https://pypi.org/project/pyserial/):
+
+```sh
+python scripts/on_device_test.py
+```
+
+GitHub CI does not run it: the runner has no board.
+
 ### USB permissions for the upload
 
 On Linux, `pio run -t upload` fails with `LIBUSB_ERROR_ACCESS` if your user
@@ -343,3 +394,15 @@ That value is sufficient because the front end takes ~1 mA. Use
 `blackpill_f103c8_128` in the board list if your board has the 128 KiB part.
 The user LED is **PB12** on the Black Pill (PC13 on the Blue Pill). It is
 active-low and sinks through the pin. Thus `LOW` lights it.
+
+Two build facts that cost time when unknown:
+
+- **ST-Link firmware older than V2J24.** OpenOCD 0.12 drives those dongles
+  only in legacy HLA mode. A V2J17S4 dongle works with
+  `interface/stlink-hla.cfg`, which is what `platformio.ini` uses. Plain
+  `interface/stlink.cfg` selects the newer dapdirect driver and it refuses the
+  dongle. After updating the dongle firmware (STSW-LINK007), set
+  `upload_protocol = stlink` to go back to the stock flow.
+- **gcc 14.2 goes with STM32duino core 3.0.0.** The core linker script needs
+  the newer `ld`. With gcc 9 the link fails on `.ARM.extab` (non constant
+  address expression). Do not downgrade the toolchain alone.

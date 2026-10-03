@@ -141,6 +141,15 @@ bool processNextHalf() {
   return true;
 }
 
+bool isRunning() {
+  // HAL view of the live path: the ADC is in regular conversion and the
+  // circular DMA channel is busy. Both handles are configured in begin().
+  const bool adc = (HAL_ADC_GetState(&hadc1) & HAL_ADC_STATE_REG_BUSY) ==
+                   HAL_ADC_STATE_REG_BUSY;
+  const bool dma = HAL_DMA_GetState(&hdma_adc1) == HAL_DMA_STATE_BUSY;
+  return adc && dma;
+}
+
 bool nextResult(scan::Result* out) { return scan::fifoPop(&g_fifo, out); }
 
 }  // namespace capture

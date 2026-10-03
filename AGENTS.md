@@ -35,6 +35,14 @@ rules only: workflow, layout, commands, platform facts, invariants.
   native unit tests (`pio test -e native`) compile it directly, so it must
   not pull in firmware-only headers. Keep it separate from reporting so the
   scan timing stays obvious.
+- `src/selfcheck.cpp` / `src/selfcheck.h` — the on-device self test (issue 8),
+  compiled only into `ON_DEVICE_TEST` builds. It asks the HAL and the capture
+  path for the peripheral state and runs the generated scan cases; it reads no
+  peripheral registers of its own.
+- `test/scan_cases.h` — feeds one generated case through the scan and records
+  what came out. Free of Unity and of the HAL, so `test/test_scan.cpp`
+  (native, asserts with Unity) and `src/selfcheck.cpp` (on device, prints
+  PASS/FAIL) share one feeder and one set of expectations.
 - Use the STM32 HAL where possible. Go below the HAL only where the F1 HAL
   does not reach, and say why in a comment.
 
@@ -54,7 +62,12 @@ pio run -t upload            # flash (ST-Link over SWD)
 pio run -t clean
 pio device monitor           # read reports on the USB CDC port
 pio run -t upload -e blackpill_f103c8_128   # 128 KiB clone
+python scripts/on_device_test.py            # flash the self test, read its report
 ```
+
+- `pio run -t upload` ends with an OpenOCD reset. The board runs the new
+  firmware right after the flash. Without that reset OpenOCD leaves the core
+  halted and nothing happens until you press reset.
 
 ## Platform facts (verified, do not re-derive)
 
@@ -65,10 +78,11 @@ pio run -t upload -e blackpill_f103c8_128   # 128 KiB clone
   counts at 72 MHz, the ADC clock is 12 MHz (PCLK2/6), USB is 48 MHz.
 - `LED_BUILTIN` is PB12 and active-low (`LOW` lights it). A Blue Pill macro
   would move it to PC13; do not define one.
-- USB CDC needs `-D PIO_FRAMEWORK_ARDUINO_ENABLE_CDC -D USBCON` in
-  `build_flags`: the pinned framework does not set `USBCON` by itself. The
-  F103 has no internal D+ pull-up, so the board must fit 1.5 kΩ from PA12 to
-  3V3; the Black Pill does.
+- USB CDC needs `-D PIO_FRAMEWORK_ARDUINO_ENABLE_CDC` in `build_flags`. The
+  framework builder turns it into `USBD_USE_CDC`, `USBCON`, `USB_VID`,
+  `USB_PID` and `HAL_PCD_MODULE_ENABLED`, and it builds the USBDevice library.
+  Do not define those by hand. The F103 has no internal D+ pull-up, so the
+  board must fit 1.5 kΩ from PA12 to 3V3; the Black Pill does.
 - The build uses the pinned OpenOCD/ST-Link flow in `platformio.ini`. See
   `README.md` for the udev rule and for the serial bootloader path.
 
@@ -102,3 +116,19 @@ Use CI and unit tests for hardware-independent work (compilation, arithmetic).
 Validate hardware-dependent work _on hardware_: check for a suitable board, and
 stop and ask how to proceed if none is found. Define the expected outcome
 first, either in the issue or as a test.
+
+`python scripts/on_device_test.py` is the hardware regression test: it flashes
+the `on_device_test` environment, reads the report and exits non-zero on a
+failure. It covers the clock tree, the capture start, the crossing scan and the
+USB stack without a sensor. It needs a board, so CI does not run it. The ADC
+and DMA data path still needs a controlled optical input.
+
+With no sensor you can still drive the whole capture to report path by hand.
+Halt the core over SWD, write a known 512-sample pulse into the DMA buffer
+(`capture::buffer` in `.bss`), zero the scan state and the result FIFO, set
+`g_readyHalf` to the buffer half you wrote, clear the DMA channel enable so
+nothing overwrites the data, then resume. The board prints the measurement for
+those samples over USB CDC. Get the symbol addresses per build with
+`arm-none-eabi-nm -S`: they move when the layout changes. Used on 2026-09-19 to
+show `500000 ok` for a 500-sample pulse, the same value the native build of
+`src/scan.cpp` gives.

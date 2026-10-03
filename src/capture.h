@@ -28,6 +28,11 @@ void begin();
 // the result FIFO.
 bool processNextHalf();
 
+// True while the capture path is live: ADC1 converts on the TIM3 trigger and
+// DMA1_Channel1 transfers into the circular buffer. The on-device self test
+// (issue 8) uses it; the measurement path does not.
+bool isRunning();
+
 // Pops one finished measurement from the result FIFO. Returns false when the
 // FIFO is empty. Must run from loop() only, never from an ISR.
 bool nextResult(scan::Result* out);
