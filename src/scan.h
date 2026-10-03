@@ -79,6 +79,14 @@ struct State {
   uint8_t hitRail;       // A raw sample of the rail-side plateau (which one
                          // depends on Polarity) came within kClippedMargin of
                          // full scale.
+#if defined(SHUTTERCHECK_DEBUG)
+  // The raw extremes of the chunk in flight (issue 12). They are per chunk:
+  // the report shows where one chunk sat, and the running extremes in
+  // debug.cpp show where the whole run has been. Nothing in the scan reads
+  // them, so a release build compiles exactly the loop of today.
+  int32_t debugMin;  // Lowest raw sample of the chunk in flight.
+  int32_t debugMax;  // Highest raw sample of the chunk in flight.
+#endif
 };
 
 void initState(State* s);

@@ -123,6 +123,19 @@ inline void seedFirstSample(State* l, int32_t v) {
   l->prevInBand = 0;
 }
 
+#if defined(SHUTTERCHECK_DEBUG)
+// The raw extremes of the chunk in flight, for the debug report (issue 12).
+// The function is inlined and the two fields never feed the scan, so a
+// release build compiles exactly the loop of today. Every path that
+// consumes a sample calls it, also the skipped runs of skipQuietRun():
+// their samples are samples, so the extremes must cover the whole chunk and
+// not only the samples that reached the full path.
+inline void trackExtremes(State* l, int32_t v) {
+  if (v < l->debugMin) l->debugMin = v;
+  if (v > l->debugMax) l->debugMax = v;
+}
+#endif
+
 // Quiet-run fast path: when no pulse is open, runs of samples that provably
 // change nothing but the index are skipped whole. Two disjoint cases (prev
 // is either strictly inside the band, or exactly on a plateau; the band and
@@ -157,6 +170,11 @@ inline bool skipQuietRun(State* l, const uint16_t* samples, uint32_t* k,
       if (w <= b.lowEdge || w >= b.highEdge) break;
       ++run;
     }
+#if defined(SHUTTERCHECK_DEBUG)
+    // A skipped run is a run of samples, so the debug extremes cover it too
+    // (issue 12). This costs one pass over the run in the debug build only.
+    for (uint32_t j = *k; j < *k + run; ++j) trackExtremes(l, samples[j]);
+#endif
     l->prev = samples[*k + run - 1];
     l->nextIndex += run;
     *k += run;
@@ -168,6 +186,9 @@ inline bool skipQuietRun(State* l, const uint16_t* samples, uint32_t* k,
     // Case B: run of samples equal to the plateau.
     uint32_t run = 1;
     while (*k + run < count && samples[*k + run] == l->prev) ++run;
+#if defined(SHUTTERCHECK_DEBUG)
+    for (uint32_t j = *k; j < *k + run; ++j) trackExtremes(l, samples[j]);
+#endif
     l->nextIndex += run;
     *k += run;
     return true;
@@ -272,11 +293,22 @@ void scan(const uint16_t* samples, uint32_t count, State* s,
   // instead; only the chunk edges copy memory.
   State l = *s;
   uint32_t k = 0;
+#if defined(SHUTTERCHECK_DEBUG)
+  // The raw extremes are per chunk: they start again at the first sample of
+  // every chunk (issue 12).
+  if (count > 0) {
+    l.debugMin = samples[0];
+    l.debugMax = samples[0];
+  }
+#endif
   while (k < count) {
     // Seeding: the very first sample ever initializes the plateaus, then
     // move on.
     if (!l.havePrev) {
       seedFirstSample<P>(&l, samples[k]);
+#if defined(SHUTTERCHECK_DEBUG)
+      trackExtremes(&l, samples[k]);
+#endif
       ++k;
       continue;
     }
@@ -289,6 +321,9 @@ void scan(const uint16_t* samples, uint32_t count, State* s,
     if (skipQuietRun<P>(&l, samples, &k, count, b)) continue;
 
     int32_t v = samples[k];
+#if defined(SHUTTERCHECK_DEBUG)
+    trackExtremes(&l, v);
+#endif
 
     // Clipped latch: a raw sample of the rail-side plateau at/near the ADC
     // rail saturates that plateau and marks the excursion untrusted.

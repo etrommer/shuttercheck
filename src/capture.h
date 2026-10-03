@@ -37,6 +37,18 @@ bool isRunning();
 // FIFO is empty. Must run from loop() only, never from an ISR.
 bool nextResult(scan::Result* out);
 
+#if defined(SHUTTERCHECK_DEBUG)
+// The scan state, so the debug report can show the plateaus, the span and the
+// threshold (issue 12). debug.cpp is the only caller.
+const scan::State& state();
+
+// The number of buffer halves that the DMA overwrote before the scan saw
+// them. The DMA publishes only the newest finished half, so a finished half
+// that is not the successor of the last scanned one was lost. A report that
+// grows says that the print rate or the scan is too slow.
+uint32_t lostHalves();
+#endif
+
 }  // namespace capture
 
 #endif  // SHUTTERCHECK_CAPTURE_H

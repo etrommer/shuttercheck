@@ -41,6 +41,19 @@ rules only: workflow, layout, commands, platform facts, invariants.
   compiled only into `ON_DEVICE_TEST` builds. It asks the HAL and the capture
   path for the peripheral state and runs the generated scan cases; it reads no
   peripheral registers of its own.
+- `src/debug.cpp` / `src/debug.h` — the debug mode (issue 12). It prints the
+  state of the capture path and of the scan on the CDC port, one line every
+  `kDebugChunkInterval` scanned chunks. The whole module sits behind
+  `SHUTTERCHECK_DEBUG`, so a release build does not compile it, also not the
+  tracking of the raw extremes in `scan.cpp`. It is firmware-only: it talks to
+  Arduino and to `capture`, so the native build compiles it as an empty
+  translation unit. It reads the path, not the registers, the same rule
+  `selfcheck.cpp` follows. The print interval is a compile-time constant
+  (`DEBUG_CHUNK_INTERVAL`); no run-time knob may reappear.
+  The native env always defines `SHUTTERCHECK_DEBUG`, so `pio test -e native`
+  covers the debug fields of the scan too. `printf` of this toolchain has no
+  long long width: `%lld` prints `ld`, so `debug.cpp` formats 64-bit values
+  itself. Never use `%lld` here.
 - `test/scan_cases.h` — feeds one generated case through the scan and records
   what came out. Free of Unity and of the HAL, so `test/test_scan.cpp`
   (native, asserts with Unity) and `src/selfcheck.cpp` (on device, prints
@@ -61,11 +74,14 @@ rules only: workflow, layout, commands, platform facts, invariants.
 
 ```sh
 pio run                      # build
+pio test -e native           # native scan unit tests (always with SHUTTERCHECK_DEBUG)
 pio run -t upload            # flash (ST-Link over SWD)
 pio run -t clean
 pio device monitor           # read reports on the USB CDC port
 pio run -t upload -e blackpill_f103c8_128   # 128 KiB clone
 python scripts/on_device_test.py            # flash the self test, read its report
+pio run -e debug            # build the debug env (issue 12: prints the capture and scan state)
+pio run -e debug -t upload  # flash it
 ```
 
 - `pio run -t upload` ends with an OpenOCD reset. The board runs the new
@@ -86,6 +102,11 @@ python scripts/on_device_test.py            # flash the self test, read its repo
   `USB_PID` and `HAL_PCD_MODULE_ENABLED`, and it builds the USBDevice library.
   Do not define those by hand. The F103 has no internal D+ pull-up, so the
   board must fit 1.5 kΩ from PA12 to 3V3; the Black Pill does.
+- The CDC transmit queue of the core holds 128 bytes
+  (`CDC_TRANSMIT_QUEUE_BUFFER_PACKET_NUMBER` defaults to 2). A debug report is
+  about 155 bytes, so `[env:debug]` raises it to 8 packets: a report longer
+  than the queue blocks `loop()` until the USB moves the bytes, and a blocked
+  loop loses buffer halves (the `lost` field).
 - The build uses the pinned OpenOCD/ST-Link flow in `platformio.ini`. See
   `README.md` for the udev rule and for the serial bootloader path.
 
