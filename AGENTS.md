@@ -50,6 +50,10 @@ rules only: workflow, layout, commands, platform facts, invariants.
   translation unit. It reads the path, not the registers, the same rule
   `selfcheck.cpp` follows. The print interval is a compile-time constant
   (`DEBUG_CHUNK_INTERVAL`); no run-time knob may reappear.
+  It also prints the raw window of the recorded buffer halves after a trigger
+  (issue 16). The ring of raw halves lives in `capture.cpp`, next to the lost
+  halves counter and behind the same flag: `debug.cpp` reads both and owns
+  neither.
   The native env always defines `SHUTTERCHECK_DEBUG`, so `pio test -e native`
   covers the debug fields of the scan too. `printf` of this toolchain has no
   long long width: `%lld` prints `ld`, so `debug.cpp` formats 64-bit values

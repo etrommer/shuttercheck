@@ -5,6 +5,8 @@
 #include "capture.h"
 
 #include <Arduino.h>
+#include <string.h>
+
 #include <stm32f1xx_hal.h>
 
 namespace capture {
@@ -13,13 +15,16 @@ namespace {
 constexpr uint32_t kTotalSamples = 2 * kHalfSamples;
 
 // DMA double buffer. Only the finished (quiescent) half is read, and only
-// after `g_readyHalf` (the volatile handshake) reports it as complete, so the
-// samples themselves need no volatile qualifier.
+// after `g_readyOrdinal` (the volatile handshake) reports it as complete, so
+// the samples themselves need no volatile qualifier.
 uint16_t buffer[kTotalSamples];
 
-// Set by the DMA callbacks to the index (0 or 1) of the newest finished half;
-// 2 means none. Volatile because an ISR writes it and loop() reads it.
-volatile uint32_t g_readyHalf = 2;
+// Ordinal of the newest finished buffer half: 1, 2, 3, ...; 0 means none.
+// The ordinal gives both the slot ((ordinal - 1) & 1) and the true position
+// of the half on the sampling grid ((ordinal - 1) x kHalfSamples), so no
+// second handshake value can fall out of step with the first. Volatile
+// because an ISR writes it and loop() reads it.
+volatile uint32_t g_readyOrdinal = 0;
 
 ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
@@ -31,14 +36,49 @@ scan::State g_state;
 scan::ResultFifo g_fifo;
 
 #if defined(SHUTTERCHECK_DEBUG)
-// The halves that the DMA overwrote before the scan saw them, for the debug
-// report (issue 12).
+// The halves that the DMA finished and that the scan never saw, for the
+// debug report (issue 12). The count is exact (issue 16).
 uint32_t g_lostHalves = 0;
-// The half of the last scan; 2 means no scan yet.
-uint32_t g_lastHalf = 2;
+// Ordinal of the half of the last scan; 0 means no scan yet. The difference
+// between two scanned ordinals is the number of halves that the DMA finished
+// and that the scan missed.
+uint32_t g_lastOrdinal = 0;
+// The recorded raw halves (issue 16). The ring is a window on the sampling
+// grid: one slot holds one scanned half and the absolute index of its first
+// sample. `head` is the next slot to write and `count` the number of
+// recorded slots, so the oldest recorded slot is (head - count +
+// kHistoryHalves) modulo kHistoryHalves.
+uint16_t g_history[kHistorySamples];
+uint64_t g_historyIndex[kHistoryHalves];
+uint32_t g_historyHead = 0;
+uint32_t g_historyCount = 0;
+// A frozen ring records nothing: a dump prints it, and the print must not
+// race the DMA. The scan keeps running while the ring is frozen.
+bool g_historyFrozen = false;
+
+// Copies one scanned half into the ring. The half is quiescent: the DMA is
+// filling the other one, so the copy cannot race it. A frozen ring takes
+// nothing, because a dump prints it (issue 16).
+void recordHalf(const uint16_t* half, uint64_t startIndex) {
+  if (g_historyFrozen) return;
+  memcpy(&g_history[g_historyHead * kHalfSamples], half,
+         kHalfSamples * sizeof(uint16_t));
+  g_historyIndex[g_historyHead] = startIndex;
+  g_historyHead = (g_historyHead + 1) % kHistoryHalves;
+  if (g_historyCount < kHistoryHalves) ++g_historyCount;
+}
 #endif
 
-void onHalfFinished(uint32_t idx) { g_readyHalf = idx; }
+// How many halves the DMA has finished: 1, 2, 3, ... The callbacks share this
+// counter and they alternate, so the count is also the slot of the newest
+// half ((count - 1) & 1). `g_readyOrdinal` cannot hold the count: the loop
+// clears it on every scan.
+uint32_t g_publishedHalves = 0;
+
+// The DMA finished one buffer half: publish its ordinal. The callbacks share
+// this counter, and they alternate, so the ordinal is also the slot:
+// (ordinal - 1) & 1.
+void onHalfFinished() { g_readyOrdinal = ++g_publishedHalves; }
 
 }  // namespace
 
@@ -52,13 +92,13 @@ extern "C" void DMA1_Channel1_IRQHandler(void) {
 
 extern "C" void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc) {
   if (hadc == &hadc1) {
-    onHalfFinished(0);
+    onHalfFinished();
   }
 }
 
 extern "C" void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
   if (hadc == &hadc1) {
-    onHalfFinished(1);
+    onHalfFinished();
   }
 }
 
@@ -138,30 +178,63 @@ void begin() {
 }
 
 bool processNextHalf() {
-  uint32_t idx = g_readyHalf;  // Volatile read of the newest finished half.
-  if (idx > 1) {
+  // Volatile read of the ordinal of the newest finished half; 0 means none.
+  const uint32_t ordinal = g_readyOrdinal;
+  if (ordinal == 0) {
     return false;
   }
-  g_readyHalf = 2;  // Consume the handshake so this half is scanned once.
+  g_readyOrdinal = 0;  // Consume the handshake so this half is scanned once.
 #if defined(SHUTTERCHECK_DEBUG)
-  // The DMA publishes only the newest finished half, so a finished half that
-  // is not the successor of the last scanned one was overwritten unscanned.
-  // That is one lost half, and the debug report counts them (issue 12).
-  if (g_lastHalf < 2 && idx == g_lastHalf) ++g_lostHalves;
-  g_lastHalf = idx;
+  // The DMA finishes one half per half period, so the ordinal of this half
+  // minus the ordinal of the last scanned one is the number of halves that
+  // the scan missed, plus the one in hand. The scan missed them because the
+  // DMA overwrote them (issue 16).
+  if (g_lastOrdinal != 0 && ordinal > g_lastOrdinal + 1) {
+    g_lostHalves += ordinal - g_lastOrdinal - 1;
+  }
+  g_lastOrdinal = ordinal;
 #endif
   // The half is quiescent here: the circular DMA is filling the other half,
   // so the scan reads it at thread priority as a plain array.
+  const uint32_t slot = (ordinal - 1) & 1;
+  const uint16_t* half = &buffer[slot * kHalfSamples];
   // The polarity is a template parameter (issue 10): this build drives the
   // cascode front end, which is inverting, so dark is the high plateau.
-  scan::scan<scan::Polarity::kDarkHigh>(&buffer[idx * kHalfSamples],
-                                       kHalfSamples, &g_state, &g_fifo);
+  scan::scan<scan::Polarity::kDarkHigh>(half, kHalfSamples, &g_state, &g_fifo);
+#if defined(SHUTTERCHECK_DEBUG)
+  // Record the half with the index of its first sample on the absolute
+  // sampling grid: (ordinal - 1) halves of kHalfSamples samples came before
+  // it, also the halves the scan missed (issue 16).
+  recordHalf(half, static_cast<uint64_t>(ordinal - 1) * kHalfSamples);
+#endif
   return true;
 }
 
 #if defined(SHUTTERCHECK_DEBUG)
 const scan::State& state() { return g_state; }
 uint32_t lostHalves() { return g_lostHalves; }
+
+uint32_t historyCount() { return g_historyCount; }
+
+void historyChunk(uint32_t i, HistoryChunk* out) {
+  // The oldest recorded slot first: `head` is the next slot to write, so the
+  // oldest one is `count` slots behind it.
+  const uint32_t oldest =
+      (g_historyHead + kHistoryHalves - g_historyCount) % kHistoryHalves;
+  const uint32_t slot = (oldest + i) % kHistoryHalves;
+  out->samples = &g_history[slot * kHalfSamples];
+  out->startIndex = g_historyIndex[slot];
+}
+
+void historyFreeze() { g_historyFrozen = true; }
+
+void historyResume() {
+  // The window after a print is not contiguous with the window before it, so
+  // the ring starts empty again (issue 16).
+  g_historyFrozen = false;
+  g_historyHead = 0;
+  g_historyCount = 0;
+}
 #endif
 
 bool isRunning() {

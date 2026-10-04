@@ -83,8 +83,11 @@ void loop() {
 #if defined(SHUTTERCHECK_DEBUG)
   // Report the state of the capture path and the scan after the drain, so the
   // `last` fields show the newest result. The debug output is extra output:
-  // it does not change the exposure, the status or the LED (issue 12).
   debug::reportDue(chunkScanned);
+  // The raw window of a trigger goes out after the report, one pass at a time
+  // (issue 16). The dump is extra output: it does not change the exposure,
+  // the status or the LED.
+  debug::dumpDue(chunkScanned);
 #endif
 #endif  // defined(ON_DEVICE_TEST)
 }
