@@ -382,8 +382,8 @@ rate. Levels are in LSB of the 12-bit ADC.
 
 Read the report like this:
 
-- `lost` must stay 0. It counts the buffer halves that the DMA overwrote
-  before the scan saw them, so a rising `lost` says the print rate or the
+- `lost` must stay 0. It counts the buffer halves that the DMA finished and
+  that the scan never saw, so a rising `lost` says that the print rate or the
   scan is too slow. Build with a larger `DEBUG_CHUNK_INTERVAL` if it rises.
 - `min`, `max`, `lo` and `hi` show where the levels sit and whether they
   drift. A flat signal within a few LSB means nothing moves on PA1.
@@ -393,6 +393,64 @@ Read the report like this:
 The interval is a compile-time constant: `pio run -e debug` with
 `-D DEBUG_CHUNK_INTERVAL=32` in the build flags prints half as often. There is
 no run-time knob.
+
+#### Raw sample dump
+
+The debug build also records the raw samples of the last
+`SHUTTERCHECK_DUMP_HALVES` buffer halves (8 halves = 4096 samples = 8.192 ms)
+and prints that window after a trigger. Use it to see the signal behind a
+measurement: how often it crossed the threshold, whether it rides on a ripple
+and whether the scan missed samples.
+
+A result arms the dump. The ring then records `SHUTTERCHECK_DUMP_POSTROLL`
+halves more (2 halves = 4.096 ms). The window freezes and the rows go out over
+the following loop passes, so the print does not race the DMA and the scan
+keeps running between the rows. `SHUTTERCHECK_DUMP_COOLDOWN` chunks must pass
+before the next trigger arms one (32 chunks = 32.8 ms). Thus one exposure
+prints one window, not one window per measurement. With no result at all the
+window goes out every `SHUTTERCHECK_DUMP_IDLE` chunks (4096 chunks = 4.2 s), so
+the quiet baseline prints too. Set it to 0 to turn the idle snapshot off.
+
+| Line | Meaning |
+|------|---------|
+| `!dump samples=… rows=… base=… thr=… band=…` | Start of a window: sample count, row count, index of the first sample, threshold and band width at the trigger |
+| `! <index>: <16 samples>` | One row of raw samples. `index` is the position of the first sample on the sampling grid, so `index x 2 µs` is its time |
+| `!gap <n> samples` | `n` samples are missing between the previous chunk and this one: the DMA finished halves that the scan never saw |
+| `!dump end` | End of the window |
+
+Read the window like this:
+
+- The sample index is the true index. It counts every half that the DMA
+  finished, also the halves that the scan missed. Thus the difference between
+  two rows is the real time between them, and a `!gap` line names the samples
+  that are missing.
+- Compare the samples with `thr` from the header. A signal that crosses `thr`
+  more than once during one excursion prints more than one measurement.
+- A light source with a ripple shows as a periodic wave. Count the samples of
+  one period: `period = samples x 2 µs`. A mains driver gives about 100 Hz. A
+  switch-mode driver or a PWM dimmer gives tens of kHz.
+
+The dump is debug-only. A release build compiles none of it and pays none of
+the 8 KiB of ring RAM. Build with `-D SHUTTERCHECK_DUMP_HALVES=4` for a
+smaller window.
+
+One window of the quiet baseline, shortened:
+
+```
+!dump samples=4096 rows=256 base=105972224 thr=3923 band=16
+! 105972224: 4013 4014 4014 4015 4013 4016 4016 4012 4015 4013 4010 4015 4013 4015 4015 4012
+! 105972240: 4012 4013 4016 4015 4013 4012 4014 4011 4012 4013 4013 4014 4013 4015 4014 4014
+...
+!dump end
+```
+
+Read the dump with a host that reads the port in bulk. One byte per read is too
+slow for 20 kB in a few seconds, and the bytes it misses land as a hole in the
+middle of a window. `scripts/log_serial.py` reads in bulk.
+
+The capture keeps running while a window goes out, but the ring is frozen and
+the print blocks the loop. Thus `lost` rises during the print, and a `!gap`
+line reports the halves that went unrecorded.
 
 ### On-device self test
 
