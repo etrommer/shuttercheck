@@ -64,21 +64,25 @@ def draw_test_circuit():
     with schemdraw.Drawing(file=str(TEST_OUTPUT), show=False) as d:
         d.config(unit=2.5, fontsize=10)
 
-        # PA0 drives PA1 through the series resistor. The 10 kΩ load and
-        # 5 nF test capacitor both connect from PA1 to the common ground.
-        d.add(flow.Box(label="PA0\nTIM2_CH1", w=3.8, h=1.9).at((0, 4)).anchor("W"))
-        d.add(elm.ResistorIEC(label="RTEST\n1 kΩ").endpoints((3.8, 4), (6.3, 4)))
-        d.add(elm.Dot().at((6.3, 4)))
-        d.add(elm.Line().endpoints((6.3, 4), (9, 4)))
-        d.add(flow.Box(label="PA1\nADC1_IN1", w=3.8, h=1.9).at((9, 4)).anchor("W"))
+        # Both pins are on one Black Pill. Stack them inside one board outline.
+        d.add(flow.Box(label="Black Pill\nSTM32F103C8T6", w=3.8, h=5.6).at((0, 3)).anchor("W"))
+        d.add(flow.Box(label="PA0\nTIM2_CH1", w=2.6, h=1.2).at((0.5, 4.6)).anchor("W"))
+        d.add(flow.Box(label="PA1\nADC1_IN1", w=2.6, h=1.2).at((0.5, 1.4)).anchor("W"))
 
-        d.add(elm.ResistorIEC(label="RLOAD\n10 kΩ").endpoints((6.3, 4), (6.3, 0.8)))
-        d.add(elm.Line().endpoints((6.3, 0.8), (6.3, 0)))
-        d.add(elm.Dot().at((8.1, 4)))
-        d.add(elm.Capacitor(label="CTEST\n5 nF").endpoints((8.1, 4), (8.1, 0.8)))
-        d.add(elm.Line().endpoints((8.1, 0.8), (8.1, 0)))
-        d.add(elm.Line().endpoints((6.3, 0), (8.1, 0)))
-        d.add(elm.Ground().at((7.2, 0)))
+        # PA0 feeds the PA1 node through 1 kΩ. Both test loads go to ground.
+        d.add(elm.Line().endpoints((3.1, 4.6), (5.2, 4.6)))
+        d.add(elm.ResistorIEC(label="RTEST\n1 kΩ").endpoints((5.2, 4.6), (5.2, 1.4)))
+        d.add(elm.Dot().at((5.2, 1.4)))
+        d.add(elm.Line().endpoints((3.1, 1.4), (9, 1.4)))
+        d.add(elm.Dot().at((7, 1.4)))
+        d.add(elm.Dot().at((9, 1.4)))
+
+        d.add(elm.ResistorIEC(label="RLOAD\n10 kΩ").endpoints((7, 1.4), (7, -1.2)))
+        d.add(elm.Line().endpoints((7, -1.2), (7, -2)))
+        d.add(elm.Capacitor(label="CTEST\n5 nF").endpoints((9, 1.4), (9, -1.2)))
+        d.add(elm.Line().endpoints((9, -1.2), (9, -2)))
+        d.add(elm.Line().endpoints((7, -2), (9, -2)))
+        d.add(elm.Ground().at((8, -2)))
 
 if __name__ == "__main__":
     draw_cascode()
