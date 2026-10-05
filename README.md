@@ -42,10 +42,12 @@ and the design invariants.
    pulses) and the **bright plateau** (during the pulse). It crosses at their
    midpoint. A software hysteresis band stops noise from faking an edge. The
    band is max(8 LSB, one sixteenth of the plateau span). A pulse re-arms
-   only after the signal returns to the dark-side band edge. The firmware
-   estimates the plateaus from samples that are not in a crossing pair and not
-   in the band. The *crossing algorithm* section below walks through this
-   detection step by step.
+   only after the signal returns to the dark-side band edge. The scan confirms
+   a crossing after two consecutive samples reach the new side. It keeps the
+   first crossing time for interpolation and cancels a candidate if the signal
+   returns before confirmation. The firmware estimates the plateaus from
+   samples that are not in a crossing pair and not in the band. The *crossing
+   algorithm* section below walks through this detection step by step.
 5. **Exposure.** The exposure is the closing crossing time minus the opening
    crossing time. A sample is valid only if it has exactly one opening and one
    closing crossing. The crossing direction follows the polarity: with this
@@ -144,21 +146,24 @@ the downward crossing; with a direct-coupled front end it is the upward one.
 
 - **Opening (shutter opens).** The previous sample must lie beyond the band
   edge on the dark side, and the new sample must reach the threshold from the
-  light side. The band-edge condition is the re-arm: the opening can fire only
-  after the signal returned to the dark plateau. At the opening, the firmware
-  locks the threshold for this pulse and records the interpolated opening
-  time.
+  light side. The band-edge condition is the re-arm: the opening can start only
+  after the signal returned to the dark plateau. The scan stores the first
+  interpolated crossing time as a candidate. The next sample must remain on
+  the light side to confirm the opening; otherwise the scan cancels it.
 - **Closing (shutter closes).** While a pulse is open, the signal must cross
-  back through the locked threshold onto the dark side. The firmware
-  interpolates the closing time and computes the exposure:
+  back through the locked threshold onto the dark side. The scan stores the
+  first interpolated crossing time as a candidate. The next sample must remain
+  on the dark side to confirm the closing; otherwise the scan cancels it and
+  keeps the pulse open. On confirmation, it computes the exposure:
 
   ```
   exposure = closing time − opening time
   ```
 
-- **Stale.** A crossing with no open pulse is a lone edge. The firmware
-  reports `stale` and drops it. With this front end the lone edge is the
-  rising one, because that is the direction back to dark.
+- **Stale.** A crossing back to dark with no open pulse starts a candidate.
+  The next sample must stay on the dark side to confirm it. Otherwise the scan
+  cancels it. A confirmed lone crossing is `stale`; with this front end it is
+  the rising one.
 
 Both crossing times come from the interpolation formula in step 4.
 
@@ -405,7 +410,15 @@ The `on_device_test` environment builds a firmware that tests itself. It
 starts the capture path, but it feeds the generated scan vectors to the scan
 instead of the ADC output. Thus it needs no sensor and no light. It checks the
 clock frequencies, the capture path, the USB connection and the scan cases in
-both signal polarities, and it prints one line per check:
+both signal polarities. Then it generates one light pulse per shutter
+duration and measures each pulse with the real capture path (the ADC pulse
+section, see its wiring below). Before the test series, it sends one
+conditioning pulse and discards its reading. This lets the scan learn both
+plateaus. It keeps these plateau values for the measured pulses. Before each
+pulse, it waits for the previous timer cycle to finish and processes two dark
+DMA chunks. It fails on an early result or a result outside the 0.5 % margin.
+It also checks that each scan takes no more than 65,000 core cycles and that
+DMA overwrites no pending half. It prints one line per check:
 
 ```sh
 python scripts/gen_test_data.py      # generate the scan vectors
@@ -426,8 +439,34 @@ PASS scan case 0 dark low
 PASS scan case 0 dark high
 ...
 PASS scan case 9 dark high
+PASS adc pulse conditioning 5 ms
+PASS adc pulse 1 ms 1000000 ns
+...
+PASS adc pulse 1000 ms 999992 ns
+overwritten halves 0
+PASS DMA half backlog
+scan max cycles 51974
+PASS scan budget
 ALL TESTS PASSED
 ```
+
+Self-test wiring for the ADC pulse section:
+
+The pulse generator drives PA0 (TIM2_CH1). The section measures that pulse
+with the real capture path on PA1, through a test divider. Disconnect the
+cascode output from PA1 while this wiring is in place.
+
+| From | To                     | Notes |
+|------|------------------------|-------|
+| PA0  | PA1 through 1 kΩ       | The pulse source. Both pulse edges are timer events, so the pulse has no software jitter |
+| PA1  | GND through 10 kΩ      | Together with the 1 kΩ this divider sets the two ADC plateaus to 0 V and 3.0 V (about 3723 LSB) |
+| PA1  | GND through 5 nF       | The test capacitor. Keep it in place during the ADC pulse section. |
+
+Both plateaus stay clear of the rail zone (4063 LSB) and of the 48 LSB weak
+floor. A plain wire between the pins does not work: the scan rejects a
+saturated plateau as `clipped` and prints no time (design invariant 6).
+Without the divider the section FAILs. That is the expected report when the
+wiring is not in place.
 
 The LED blinks forever when a check fails. It stays dark when everything
 passes. The report waits up to 10 s for a host to open the CDC port. Open the

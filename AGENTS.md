@@ -9,7 +9,8 @@ rules only: workflow, layout, commands, platform facts, invariants.
 - Every issue gets its own branch: create a branch from `main` for the issue,
   do the work there, and push to that branch — never to `main`.
 - Open a Pull Request against `main` when the work is complete, referencing
-  the issue. Never merge into `main` directly.
+  the issue at the end of the PR title, e.g. "Fix bug in ADC frontend (#10)".
+  Never merge into `main` directly.
 - When you write an issue for a new feature, and an implementation detail is
   not clear, stop and ask. Do not start the work before the answer.
 - Write all text in ASD-STE100 Simplified Technical English: README, AGENTS.md,
@@ -33,14 +34,21 @@ rules only: workflow, layout, commands, platform facts, invariants.
 - `src/scan.cpp` / `src/scan.h` — the crossing scan, exposure measurement and
   the result FIFO. `scan()` is a template on `scan::Polarity`: the signal
   direction is a compile-time constant, so it costs no cycle in the hot loop.
-  Pure integer, stdint only, free of HAL and Arduino: the native unit tests
-  (`pio test -e native`) compile it directly, so it must not pull in
-  firmware-only headers. Keep it separate from reporting so the scan timing
-  stays obvious.
+  The scan confirms a threshold crossing with two consecutive samples on the
+  new side, but keeps the first crossing time for interpolation. Pure integer,
+  stdint only, free of HAL and Arduino: the native unit tests compile it
+  directly. Keep it separate from reporting so the scan timing stays obvious.
 - `src/selfcheck.cpp` / `src/selfcheck.h` — the on-device self test (issue 8),
-  compiled only into `ON_DEVICE_TEST` builds. It asks the HAL and the capture
-  path for the peripheral state and runs the generated scan cases; it reads no
-  peripheral registers of its own.
+  compiled only into `ON_DEVICE_TEST` builds. It asks the HAL, capture path and
+  pulsegen for peripheral state. It runs generated scan cases and reads no
+  peripheral registers itself. Its last section sends a conditioning pulse to
+  learn both plateaus, then measures one pulse per shutter duration.
+- `src/pulsegen.cpp` / `src/pulsegen.h` — the test pulse generator (issue 18),
+  compiled only into `ON_DEVICE_TEST` builds. TIM2_CH1 on PA0 emits one light
+  pulse per arm call after 1 ms of dark lead-in; both edges are timer events,
+  so the pulse has no software jitter. The pin idles dark (high), the same
+  signal direction as the cascode front end. The selfcheck ADC section is the
+  only caller.
 - `src/debug.cpp` / `src/debug.h` — the debug mode (issue 12). It prints the
   state of the capture path and of the scan on the CDC port, one line every
   `kDebugChunkInterval` scanned chunks. The whole module sits behind
@@ -115,14 +123,16 @@ pio run -e debug -t upload  # flash it
 1. Timer-triggered sampling only. Never time an edge in software, never poll
    the pin, never use `analogRead()`. On this TIM3, `ARR = 0` makes no periodic
    update event, so the trigger disappears and the ADC never converts.
-2. One fixed 500 kS/s range, no state machine. No prescaler ranges, no
+2. One fixed 500 kS/s range; no range state machine. No prescaler ranges, no
    `overflow` status.
 3. The ADC configuration is fixed, and the ADC is calibrated before the first
    conversion.
 4. Threshold: the midpoint of the two tracked plateaus, with a hysteresis
    band. No trimpot-equivalent knob may reappear.
 5. A sample is valid only if exactly one opening and one closing crossing
-   belong to the same excursion. A lone crossing is `stale` and is dropped.
+   belong to the same excursion. Confirm each crossing with one further sample
+   on the new side. Cancel an unconfirmed excursion; keep the first crossing
+   time for interpolation. A confirmed lone crossing is `stale`.
 6. Conservative failure: the rejection paths are `clipped` and `weak`. Never
    print a value the firmware has not verified.
 7. The scan of one buffer chunk must finish well inside that chunk's period.
@@ -144,9 +154,13 @@ first, either in the issue or as a test.
 
 `python scripts/on_device_test.py` is the hardware regression test: it flashes
 the `on_device_test` environment, reads the report and exits non-zero on a
-failure. It covers the clock tree, the capture start, the crossing scan and the
-USB stack without a sensor. It needs a board, so CI does not run it. The ADC
-and DMA data path still needs a controlled optical input.
+failure. It covers the clock tree, the capture start, the crossing scan and
+the USB stack without a sensor, and the ADC pulse section (issue 18) covers
+the ADC and DMA data path with a generated pulse. That section needs the test
+bridge from `README.md` (PA0 -- 1 kOhm -- PA1 -- 10 kOhm -- GND, and 5 nF
+from PA1 to GND; cascode output disconnected from PA1); without the bridge it
+FAILs. It needs a board, so CI does not run it. The sensor front end still
+needs a controlled optical input.
 
 With no sensor you can still drive the whole capture to report path by hand.
 Halt the core over SWD, write a known 512-sample pulse into the DMA buffer
