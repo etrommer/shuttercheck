@@ -1,165 +1,61 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# dependencies = ["svg-schematic==1.3"]
+# requires-python = ">=3.10"
+# dependencies = ["schemdraw==0.23"]
 # ///
-"""Generate the SFH309 FA cascode schematic as an SVG."""
+"""Generate the SFH 309 FA cascode schematic as an SVG.
+
+Run it with `uv run docs/generate_schematic.py`. It rewrites
+sfh309-cascode.svg in this directory.
+"""
 
 from pathlib import Path
 
-from svg_schematic import BJT, Box, Dot, Resistor, Schematic, Wire
-
+import schemdraw
+import schemdraw.elements as elm
+import schemdraw.flow as flow
 
 OUTPUT = Path(__file__).with_name("sfh309-cascode.svg")
 
 
-def add_light_arrow(schematic, start, tip):
-    """Add one light arrow directed at the phototransistor symbol."""
-    schematic.add(
-        schematic.line(
-            start=start,
-            end=tip,
-            stroke="black",
-            stroke_width=2,
-            stroke_linecap="round",
-        )
-    )
-    x, y = tip
-    schematic.add(
-        schematic.polyline(
-            [(x - 9, y - 2), (x, y), (x - 2, y - 9)],
-            fill="none",
-            stroke="black",
-            stroke_width=2,
-            stroke_linecap="round",
-            stroke_linejoin="round",
-        )
-    )
-
-
-def add_label(schematic, text, position):
-    schematic.add(
-        schematic.text(
-            text,
-            insert=position,
-            font_family="sans-serif",
-            font_size=16,
-            text_anchor="middle",
-            fill="black",
-        )
-    )
-
-
-def add_line(schematic, start, end):
-    schematic.add(
-        schematic.line(
-            start=start,
-            end=end,
-            stroke="black",
-            stroke_width=2,
-            stroke_linecap="round",
-        )
-    )
-
-
-def draw_phototransistor(schematic, center):
-    x, y = center
-    collector = (x + 50, y - 50)
-    emitter = (x + 50, y + 50)
-    schematic.add(
-        schematic.polyline(
-            [collector, (x + 50, y - 37.5), (x, y - 25)],
-            fill="none",
-            stroke="black",
-            stroke_width=2,
-            stroke_linecap="round",
-            stroke_linejoin="round",
-        )
-    )
-    add_line(schematic, (x, y - 37.5), (x, y + 37.5))
-    schematic.add(
-        schematic.polyline(
-            [(x, y + 25), (x + 50, y + 37.5), emitter],
-            fill="none",
-            stroke="black",
-            stroke_width=2,
-            stroke_linecap="round",
-            stroke_linejoin="round",
-        )
-    )
-    schematic.add(
-        schematic.polygon(
-            [(x + 11, y + 21), (x + 39, y + 35), (x + 8, y + 33)],
-            fill="black",
-            stroke="none",
-        )
-    )
-    add_light_arrow(schematic, (x - 70, y - 60), (x - 30, y - 30))
-    add_light_arrow(schematic, (x - 70, y - 25), (x - 30, y + 5))
-    add_label(schematic, "T1", (x + 75, y - 8))
-    add_label(schematic, "SFH309 FA", (x + 102, y + 13))
-    return collector, emitter
-
-
-def add_power_symbol(schematic, point):
-    x, y = point
-    schematic.add(
-        schematic.polygon(
-            [(x, y - 58), (x - 10, y - 40), (x + 10, y - 40)],
-            fill="black",
-            stroke="none",
-        )
-    )
-    add_label(schematic, "3V3", (x, y - 68))
-
-
-def add_ground_symbol(schematic, point):
-    x, y = point
-    add_line(schematic, point, (x, y + 12))
-    for bar_y, width in ((y + 12, 36), (y + 20, 24), (y + 28, 12)):
-        add_line(schematic, (x - width / 2, bar_y), (x + width / 2, bar_y))
-    add_label(schematic, "GND", (x + 48, y + 24))
-
-
 def main():
-    with Schematic(
-        filename=str(OUTPUT),
-        font_family="sans-serif",
-        font_size=16,
-        line_width=2,
-        dot_radius=4,
-        pad=45,
-    ) as schematic:
-        r1 = Resistor(orient="v", name="R1", value="10 kΩ", p=(100, 100))
-        r2 = Resistor(orient="v", name="R2", value="10 kΩ", p=(100, 300))
-        rl = Resistor(orient="v", name="RL", value="10 kΩ", n=(400, 200))
-        q2 = BJT(kind="npn", orient="v", name="Q2", value="BC547", c=(400, 200))
-        t1_collector, t1_emitter = draw_phototransistor(schematic, (350, 400))
-        stm32 = Box(
-            i=(550, 200),
-            name="STM32F103C8T6",
-            value="PA1 (ADC1_IN1)",
-            w=5,
-            h=2,
-            nudge=14,
-            background="lightgray",
-        )
+    rail_y = 6.0
+    base_y = 3.0
 
-        Wire([(100, 100), (400, 100)])
-        Wire([(100, 200), (100, 300)])
-        Wire([(100, 250), q2.b])
-        Wire([(100, 400), (100, 500), (400, 500)])
-        Wire([(250, 100), (250, 60)])
+    with schemdraw.Drawing(file=str(OUTPUT), show=False) as d:
+        d.config(unit=2.5, fontsize=10)
 
-        Wire([q2.e, t1_collector])
-        Wire([t1_emitter, (t1_emitter[0], 500)])
-        Wire([q2.c, stm32.i])
+        # Cascode transistor Q2, its base driven by the V_bias tap.
+        q2 = d.add(elm.BjtNpn(label="Q2\nBC547").at((2.4, base_y)))
 
-        Dot(C=(250, 100))
-        Dot(C=(100, 250))
-        Dot(C=q2.c)
-        add_power_symbol(schematic, (250, 100))
-        add_ground_symbol(schematic, (250, 500))
+        # The 3V3 rail across the top, ending where RL joins it.
+        d.add(elm.Line().endpoints((0, rail_y), (q2.collector.x, rail_y)))
+        d.add(elm.Vdd(label="3V3").at((0, rail_y)))
 
+        # Bias divider: R1 from the rail to the V_bias tap, R2 to ground.
+        d.add(elm.ResistorIEC(label="R1\n10 kΩ").endpoints((0, rail_y), (0, base_y)))
+        d.add(elm.Dot().at((0, base_y)))
+        d.add(elm.ResistorIEC(label="R2\n10 kΩ").endpoints((0, base_y), (0, 0)))
+        d.add(elm.Ground().at((0, 0)))
+
+        # The tap drives the base of Q2.
+        d.add(elm.Line().endpoints((0, base_y), q2.base))
+
+        # Load resistor RL from the output node at Q2's collector up to the
+        # rail, and the output line to the ADC input of the STM32.
+        d.add(elm.Dot().at(q2.collector))
+        d.add(elm.ResistorIEC(label="RL\n10 kΩ").endpoints(q2.collector, (q2.collector.x, rail_y)))
+        d.add(elm.Line().endpoints(q2.collector, (6.3, q2.collector.y)))
+        d.add(flow.Box(label="STM32F103C8T6\nPA1 (ADC1_IN1)", w=3.8, h=1.9).at((6.3, q2.collector.y)).anchor("W"))
+
+        # Phototransistor T1 below Q2: Q2's emitter into T1's collector,
+        # T1's emitter to the ground rail. The light arrows are part of the
+        # NpnPhoto symbol.
+        t1 = d.add(elm.NpnPhoto(label="T1\nSFH 309 FA").at((q2.emitter.x, 1.9)).anchor("collector"))
+        d.add(elm.Line().endpoints(q2.emitter, t1.collector))
+        d.add(elm.Line().endpoints(t1.emitter, (t1.emitter.x, 0)))
+        # The ground rail from R2's ground to T1's emitter.
+        d.add(elm.Line().endpoints((0, 0), (t1.emitter.x, 0)))
 
 
 if __name__ == "__main__":
