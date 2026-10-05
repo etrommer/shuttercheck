@@ -12,7 +12,10 @@ Steps:
 4. Exit 0 when the board reports `ALL TESTS PASSED`, 1 when it reports
    failures, 2 on a timeout or a serial error.
 
-It needs a board on SWD and on USB. GitHub CI does not run it.
+It needs a board on SWD and on USB. The ADC pulse section needs the test
+bridge from the README: PA0 -- 1 kOhm -- PA1 -- 10 kOhm -- GND, and 5 nF from
+PA1 to GND. Disconnect the cascode output from PA1. Without this wiring, the
+ADC pulse checks fail. GitHub CI does not run this test.
 """
 
 import argparse

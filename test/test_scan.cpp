@@ -119,6 +119,71 @@ void test_debug_extremes_of_a_skipped_in_band_chunk() {
   TEST_ASSERT_EQUAL_INT32(2900, out.debugMax);
 }
 
+// One ADC outlier on the dark plateau must not create a weak pulse result.
+void test_single_sample_dip_does_not_emit_result() {
+  const uint16_t samples[] = {4000, 4000, 3920, 4000, 4000};
+  scan::State state;
+  scan::initState(&state);
+  scan::ResultFifo fifo;
+  scan::fifoInit(&fifo);
+
+  scan::scan<scan::Polarity::kDarkHigh>(samples,
+                                        sizeof(samples) / sizeof(samples[0]),
+                                        &state, &fifo);
+  scan::Result result;
+  TEST_ASSERT_TRUE(!scan::fifoPop(&fifo, &result));
+}
+void test_single_sample_rise_does_not_emit_result() {
+  const uint16_t samples[] = {100, 100, 180, 100, 100};
+  scan::State state;
+  scan::initState(&state);
+  scan::ResultFifo fifo;
+  scan::fifoInit(&fifo);
+
+  scan::scan<scan::Polarity::kDarkLow>(samples,
+                                       sizeof(samples) / sizeof(samples[0]),
+                                       &state, &fifo);
+  scan::Result result;
+  TEST_ASSERT_TRUE(!scan::fifoPop(&fifo, &result));
+}
+
+void test_single_sample_dip_does_not_close_open_pulse() {
+  const uint16_t samples[] = {4000, 4000, 2000, 2000, 2000, 2000, 4000,
+                              2000, 2000, 2000, 2000, 2000, 2000, 4000,
+                              4000};
+  scan::State state;
+  scan::initState(&state);
+  scan::ResultFifo fifo;
+  scan::fifoInit(&fifo);
+
+  scan::scan<scan::Polarity::kDarkHigh>(samples,
+                                        sizeof(samples) / sizeof(samples[0]),
+                                        &state, &fifo);
+  scan::Result result;
+  TEST_ASSERT_TRUE(scan::fifoPop(&fifo, &result));
+  TEST_ASSERT_EQUAL_STRING("ok", scan::statusName(result.status));
+  TEST_ASSERT_EQUAL_INT64(22000, result.exposureNs);
+  TEST_ASSERT_TRUE(!scan::fifoPop(&fifo, &result));
+}
+
+void test_single_sample_dip_at_chunk_boundary_is_ignored() {
+  uint16_t samples[scan::kChunkSamples + 2];
+  for (uint32_t i = 0; i < scan::kChunkSamples + 2; ++i) {
+    samples[i] = 4000;
+  }
+  samples[scan::kChunkSamples - 1] = 3920;
+
+  scan::State state;
+  scan::initState(&state);
+  scan::ResultFifo fifo;
+  scan::fifoInit(&fifo);
+  scan::scan<scan::Polarity::kDarkHigh>(samples, scan::kChunkSamples, &state,
+                                        &fifo);
+  scan::scan<scan::Polarity::kDarkHigh>(samples + scan::kChunkSamples, 2,
+                                        &state, &fifo);
+  scan::Result result;
+  TEST_ASSERT_TRUE(!scan::fifoPop(&fifo, &result));
+}
 void test_case0_clean_1_1000() { runCase(0); }
 void test_case1_clean_1_4000() { runCase(1); }
 void test_case2_crossing_across_chunk() { runCase(2); }
@@ -136,6 +201,10 @@ int main() {
   RUN_TEST(test_debug_extremes_of_a_chunk_with_a_step);
   RUN_TEST(test_debug_extremes_reset_per_chunk);
   RUN_TEST(test_debug_extremes_of_a_skipped_in_band_chunk);
+  RUN_TEST(test_single_sample_dip_does_not_emit_result);
+  RUN_TEST(test_single_sample_rise_does_not_emit_result);
+  RUN_TEST(test_single_sample_dip_does_not_close_open_pulse);
+  RUN_TEST(test_single_sample_dip_at_chunk_boundary_is_ignored);
   RUN_TEST(test_case0_clean_1_1000);
   RUN_TEST(test_case1_clean_1_4000);
   RUN_TEST(test_case2_crossing_across_chunk);
