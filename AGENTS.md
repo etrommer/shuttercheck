@@ -8,8 +8,7 @@ rules only: workflow, layout, commands, platform facts, invariants.
 
 - Every issue gets its own branch: create a branch from `main` for the issue,
   do the work there, and push to that branch — never to `main`.
-- Open a Pull Request against `main` when the work is complete, referencing
-  the issue at the end of the PR title, e.g. "Fix bug in ADC frontend (#10)".
+- Open a Pull Request against `main` when the work is complete.
   Never merge into `main` directly.
 - When you write an issue for a new feature, and an implementation detail is
   not clear, stop and ask. Do not start the work before the answer.
