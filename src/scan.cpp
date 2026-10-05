@@ -75,6 +75,10 @@ inline Status classify(const State& s) {
   if (plateauSpan<P>(s) < kWeakMinSpan) return Status::kWeak;
   return Status::kOk;
 }
+inline bool pulseIsOpen(const State& s) {
+  return s.phase == ExcursionPhase::kPulseOpen ||
+         s.phase == ExcursionPhase::kClosingCandidate;
+}
 
 // The rail latch: the front end can only drive its rail-side plateau to full
 // scale, so a raw sample of the other plateau near full scale says nothing
@@ -85,7 +89,7 @@ inline Status classify(const State& s) {
 template <Polarity P>
 inline bool hitsRail(const State& l, int32_t v) {
   if (v < kFullScale - kClippedMargin) return false;
-  return (l.inPulse != 0) == upOpensShutter<P>();
+  return pulseIsOpen(l) == upOpensShutter<P>();
 }
 
 // Band geometry for one sample: the threshold and its hysteresis edges.
@@ -119,7 +123,6 @@ inline void seedFirstSample(State* l, int32_t v) {
   l->initDark = 1;
   l->bright = v + (darkIsHigh<P>() ? -kInitSpread : kInitSpread);
   l->initBright = 1;
-  l->nextIndex = 1;
   l->prevInBand = 0;
 }
 
@@ -157,7 +160,7 @@ inline void trackExtremes(State* l, int32_t v) {
 template <Polarity P>
 inline bool skipQuietRun(State* l, const uint16_t* samples, uint32_t* k,
                          uint32_t count, const Band& b) {
-  if (l->inPulse) return false;
+  if (l->phase != ExcursionPhase::kDarkArmed) return false;
   // Order the tests hot-first: with a pulse open (common on a busy signal)
   // the gate exits on the very first test.
   if (l->prevInBand && l->prev > b.lowEdge && l->prev < b.highEdge &&
@@ -176,7 +179,6 @@ inline bool skipQuietRun(State* l, const uint16_t* samples, uint32_t* k,
     for (uint32_t j = *k; j < *k + run; ++j) trackExtremes(l, samples[j]);
 #endif
     l->prev = samples[*k + run - 1];
-    l->nextIndex += run;
     *k += run;
     return true;
   }
@@ -189,7 +191,6 @@ inline bool skipQuietRun(State* l, const uint16_t* samples, uint32_t* k,
 #if defined(SHUTTERCHECK_DEBUG)
     for (uint32_t j = *k; j < *k + run; ++j) trackExtremes(l, samples[j]);
 #endif
-    l->nextIndex += run;
     *k += run;
     return true;
   }
@@ -203,8 +204,17 @@ enum class Crossing : uint8_t {
   kNone,
   kUp,      // The signal moved up across the threshold.
   kDown,    // The signal moved down across the threshold.
-  kStale,   // A crossing with no open pulse. Lone edge: dropped.
+  kStale,   // A lone edge without an open pulse; confirm before reporting.
 };
+template <Polarity P>
+inline bool onLightSide(int32_t v, int32_t thr) {
+  return darkIsHigh<P>() ? (v <= thr) : (v >= thr);
+}
+
+template <Polarity P>
+inline bool onDarkSide(int32_t v, int32_t thr) {
+  return darkIsHigh<P>() ? (v > thr) : (v < thr);
+}
 
 template <Polarity P>
 inline Crossing detectCrossing(const State& l, int32_t v, const Band& b) {
@@ -215,24 +225,22 @@ inline Crossing detectCrossing(const State& l, int32_t v, const Band& b) {
   // dark-side edge already implies prev beyond the threshold.
   const bool prevOnDarkSide = darkIsHigh<P>() ? (l.prev >= b.highEdge)
                                               : (l.prev <= b.lowEdge);
-  const bool vOnLightSide = darkIsHigh<P>() ? (v <= b.thr) : (v >= b.thr);
+  const bool vOnLightSide = onLightSide<P>(v, b.thr);
   const Crossing opens = darkIsHigh<P>() ? Crossing::kDown : Crossing::kUp;
   const Crossing closes = darkIsHigh<P>() ? Crossing::kUp : Crossing::kDown;
   if (prevOnDarkSide && vOnLightSide) return opens;
-  if (l.inPulse) {
+  if (pulseIsOpen(l)) {
     // An open pulse closes when the signal falls back through its locked
     // threshold.
     const bool prevPastThr = darkIsHigh<P>() ? (l.prev <= l.scanThr)
                                              : (l.prev >= l.scanThr);
-    const bool vBackOnDark = darkIsHigh<P>() ? (v > l.scanThr)
-                                             : (v < l.scanThr);
+    const bool vBackOnDark = onDarkSide<P>(v, l.scanThr);
     return (prevPastThr && vBackOnDark) ? closes : Crossing::kNone;
   }
-  // Lone crossing, stale and dropped. The `prev` test is redundant for the
-  // same reason as above.
+  // A lone return crossing is reported as stale only after confirmation.
   const bool prevOnLightSide = darkIsHigh<P>() ? (l.prev <= b.lowEdge)
                                                : (l.prev >= b.highEdge);
-  const bool vOnDarkSide = darkIsHigh<P>() ? (v > b.thr) : (v < b.thr);
+  const bool vOnDarkSide = onDarkSide<P>(v, b.thr);
   if (prevOnLightSide && vOnDarkSide) return Crossing::kStale;
   return Crossing::kNone;
 }
@@ -253,30 +261,44 @@ inline void trackPlateaus(State* l, const Band& b, bool crossed) {
   }
 }
 
-// An opening crossing opens a pulse: lock this excursion's threshold and
-// record its opening time. The rail latch is not cleared here: with kDarkHigh
-// the rail-side plateau is the dark one, which is sampled before the pulse
-// opens. closePulse() clears it instead.
-inline void openPulse(State* l, int32_t v, const Band& b, uint64_t index) {
-  l->scanThr = b.thr;
-  l->inPulse = 1;
-  l->riseNs = interpolateNs(l->prev, v, b.thr, index);
+// Fast update for a known dark-side sample pair in kDarkArmed. The dark EMA
+// and previous ADC sample both stay in 0..4095. The weighted sum is
+// nonnegative, so an unsigned power-of-two divide preserves truncation.
+inline void trackDarkPlateau(State* l) {
+  if (!l->prevInBand) {
+    const uint32_t weighted =
+        static_cast<uint32_t>(l->dark) * (kEmaK - 1) +
+        static_cast<uint32_t>(l->prev);
+    l->dark = static_cast<int32_t>(weighted / kEmaK);
+  }
 }
 
-// The closing crossing closes the open pulse: interpolate the closing time,
-// classify the excursion and push the measurement. Rejections print no value
-// (README output: "0 clipped", "0 weak"). The rail latch belongs to this
-// excursion only, so it is released here, after the classification.
+// A threshold crossing starts a candidate. Confirmation uses later samples,
+// but measurement time stays at this first interpolated crossing.
+inline void startOpeningCandidate(State* l, int32_t v, const Band& b,
+                                 uint64_t index) {
+  l->scanThr = b.thr;
+  l->riseNs = interpolateNs(l->prev, v, b.thr, index);
+  l->phase = ExcursionPhase::kOpeningCandidate;
+}
+
+inline void startClosingCandidate(State* l, int32_t v, uint64_t index) {
+  l->candidateNs = interpolateNs(l->prev, v, l->scanThr, index);
+  l->phase = ExcursionPhase::kClosingCandidate;
+}
+
+// Confirmed closing edge: classify and publish the saved first-crossing time.
+// The rail latch belongs to this excursion and is released after the result.
 template <Polarity P>
-inline void closePulse(State* l, int32_t v, uint64_t index,
-                       ResultFifo* fifo) {
-  int64_t fallNs = interpolateNs(l->prev, v, l->scanThr, index);
+inline void finishPulse(State* l, ResultFifo* fifo) {
   Result r;
   r.status = classify<P>(*l);
-  r.exposureNs = (r.status == Status::kOk) ? (fallNs - l->riseNs) : 0;
+  r.exposureNs =
+      r.status == Status::kOk ? (l->candidateNs - l->riseNs) : 0;
   fifoPush(fifo, r);
-  l->inPulse = 0;
+  l->phase = ExcursionPhase::kDarkArmed;
   l->hitRail = 0;
+  l->candidateNs = 0;
 }
 }  // namespace
 
@@ -292,6 +314,7 @@ void scan(const uint16_t* samples, uint32_t count, State* s,
   // would touch RAM on every sample. The hot fields live in registers
   // instead; only the chunk edges copy memory.
   State l = *s;
+  const uint64_t chunkStart = l.nextIndex;
   uint32_t k = 0;
 #if defined(SHUTTERCHECK_DEBUG)
   // The raw extremes are per chunk: they start again at the first sample of
@@ -325,47 +348,101 @@ void scan(const uint16_t* samples, uint32_t count, State* s,
     trackExtremes(&l, v);
 #endif
 
-    // Clipped latch: a raw sample of the rail-side plateau at/near the ADC
-    // rail saturates that plateau and marks the excursion untrusted.
-    if (hitsRail<P>(l, v)) l.hitRail = 1;
+    // During an open pulse, the previous sample is on the light side of the
+    // locked threshold. Only the return crossing can occur in this phase.
+    if (l.phase == ExcursionPhase::kPulseOpen) {
+      if (upOpensShutter<P>() && v >= kFullScale - kClippedMargin) {
+        l.hitRail = 1;
+      }
+      const bool crossed = darkIsHigh<P>()
+                               ? (l.prev <= l.scanThr && v > l.scanThr)
+                               : (l.prev >= l.scanThr && v < l.scanThr);
+      const bool curInBand = inBand(v, b);
+      trackPlateaus<P>(&l, b, crossed);
+      if (crossed) startClosingCandidate(&l, v, chunkStart + k);
+      l.prev = v;
+      l.prevInBand = curInBand;
+      ++k;
+      continue;
+    }
 
-    // Crossing detection, plateau tracking and pulse bookkeeping, in that
-    // order: plateau tracking must see the previous sample before prev is
-    // overwritten, and a crossing excludes its straddling sample.
-    Crossing c = detectCrossing<P>(l, v, b);
-    bool crossed = c != Crossing::kNone;
-    bool curInBand = inBand(v, b);
+    // On the dark side in the armed phase, two consecutive samples cannot
+    // open a pulse or form a stale edge. Keep plateau and rail tracking, but
+    // skip the general crossing and phase logic for this common run.
+    if (l.phase == ExcursionPhase::kDarkArmed) {
+      const bool prevDarkSide = darkIsHigh<P>() ? l.prev >= b.highEdge
+                                                 : l.prev <= b.lowEdge;
+      const bool sampleDarkSide = darkIsHigh<P>() ? v >= b.highEdge
+                                                   : v <= b.lowEdge;
+      if (prevDarkSide && sampleDarkSide) {
+        if (darkIsHigh<P>() && v >= kFullScale - kClippedMargin) {
+          l.hitRail = 1;
+        }
+        const bool curInBand = darkIsHigh<P>() ? v == b.highEdge
+                                                : v == b.lowEdge;
+        trackDarkPlateau(&l);
+        l.prev = v;
+        l.prevInBand = curInBand;
+        ++k;
+        continue;
+      }
+    }
+
+    // Latch rail samples from the active rail-side plateau.
+    if (hitsRail<P>(l, v)) l.hitRail = 1;
+    // Detect an edge or confirm a pending candidate before updating prev.
+    // A candidate sample is excluded from plateau tracking, like a crossing.
+    const ExcursionPhase phase = l.phase;
+    const bool confirming = phase == ExcursionPhase::kOpeningCandidate ||
+                            phase == ExcursionPhase::kClosingCandidate ||
+                            phase == ExcursionPhase::kStaleCandidate;
+    const Crossing c = confirming ? Crossing::kNone
+                                  : detectCrossing<P>(l, v, b);
+    const bool crossed = confirming || c != Crossing::kNone;
+    const bool curInBand = inBand(v, b);
     trackPlateaus<P>(&l, b, crossed);
 
-    uint64_t index = l.nextIndex;
-    switch (c) {
-      case Crossing::kUp:
-        // The shutter opens on whichever crossing leaves the dark plateau.
-        if (upOpensShutter<P>()) {
-          openPulse(&l, v, b, index);
-        } else {
-          closePulse<P>(&l, v, index, fifo);
+    switch (phase) {
+      case ExcursionPhase::kDarkArmed:
+        if (c == Crossing::kStale) {
+          l.scanThr = b.thr;
+          l.phase = ExcursionPhase::kStaleCandidate;
+        } else if (c == (upOpensShutter<P>() ? Crossing::kUp
+                                             : Crossing::kDown)) {
+          startOpeningCandidate(&l, v, b, chunkStart + k);
         }
         break;
-      case Crossing::kDown:
-        if (upOpensShutter<P>()) {
-          closePulse<P>(&l, v, index, fifo);
-        } else {
-          openPulse(&l, v, b, index);
+      case ExcursionPhase::kOpeningCandidate:
+        l.phase = onLightSide<P>(v, l.scanThr)
+                      ? ExcursionPhase::kPulseOpen
+                      : ExcursionPhase::kDarkArmed;
+        break;
+      case ExcursionPhase::kPulseOpen:
+        if (c != Crossing::kNone) {
+          startClosingCandidate(&l, v, chunkStart + k);
         }
         break;
-      case Crossing::kStale:
-        fifoPush(fifo, Result{Status::kStale, 0});
+      case ExcursionPhase::kClosingCandidate:
+        if (onDarkSide<P>(v, l.scanThr)) {
+          finishPulse<P>(&l, fifo);
+        } else {
+          l.phase = ExcursionPhase::kPulseOpen;
+          l.candidateNs = 0;
+        }
         break;
-      case Crossing::kNone:
+      case ExcursionPhase::kStaleCandidate:
+        if (onDarkSide<P>(v, l.scanThr)) {
+          fifoPush(fifo, Result{Status::kStale, 0});
+        }
+        l.phase = ExcursionPhase::kDarkArmed;
         break;
     }
 
     l.prev = v;
     l.prevInBand = curInBand;
-    ++l.nextIndex;
     ++k;
   }
+  l.nextIndex = chunkStart + count;
   *s = l;
 }
 

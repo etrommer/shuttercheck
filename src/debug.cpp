@@ -102,7 +102,9 @@ void printReport() {
                          s.debugMax, g_runMin, g_runMax, s.dark, s.bright,
                          span, thrOf(s), 2 * hysteresisHalf(span),
                          static_cast<unsigned>(s.hitRail),
-                         static_cast<unsigned>(s.inPulse),
+                         static_cast<unsigned>(
+                             s.phase == scan::ExcursionPhase::kPulseOpen ||
+                             s.phase == scan::ExcursionPhase::kClosingCandidate),
                          capture::lostHalves(), g_ok, g_stale, g_clip, g_weak,
                          last);
   if (n <= 0 || static_cast<size_t>(n) + kInt64Bytes + 2 > sizeof(line)) {

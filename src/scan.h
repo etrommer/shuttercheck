@@ -61,6 +61,13 @@ struct ResultFifo {
   volatile uint32_t tail;
   Result buf[kFifoSize];
 };
+enum class ExcursionPhase : uint8_t {
+  kDarkArmed,
+  kOpeningCandidate,
+  kPulseOpen,
+  kClosingCandidate,
+  kStaleCandidate,
+};
 
 // Plateau, hysteresis and excursion state carried across chunk scans, plus
 // the one overlap sample (the last sample of the previous chunk).
@@ -68,13 +75,14 @@ struct State {
   int32_t prev;          // Last processed sample (the overlap sample).
   int32_t dark;          // Dark plateau EMA value (LSB).
   int32_t bright;        // Bright plateau EMA value (LSB).
-  int32_t scanThr;       // Threshold locked for the in-progress pulse.
-  int64_t riseNs;        // Opening crossing time (ns) of the pulse in flight.
+  int32_t scanThr;       // Threshold locked for the current excursion.
+  int64_t riseNs;        // First interpolated opening crossing time.
+  int64_t candidateNs;   // First interpolated closing crossing time.
   uint64_t nextIndex;    // Absolute sample index of the next sample.
   uint8_t havePrev;      // prev is valid.
   uint8_t initDark;      // dark plateau initialized.
   uint8_t initBright;    // bright plateau initialized.
-  uint8_t inPulse;       // A pulse is open; expect the closing crossing.
+  ExcursionPhase phase;  // Current edge-qualification state.
   uint8_t prevInBand;    // prev lay inside the hysteresis band.
   uint8_t hitRail;       // A raw sample of the rail-side plateau (which one
                          // depends on Polarity) came within kClippedMargin of
