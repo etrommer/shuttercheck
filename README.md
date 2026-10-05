@@ -17,12 +17,9 @@ and the design invariants.
 
 ## How it measures
 
-1. **SFH 309 FA** (Si NPN phototransistor, T1 3 mm radial). Connect the
-   collector to 3V3 and the emitter to the load resistor `R_E` to GND. The
-   current gain of the transistor multiplies the photocurrent. Thus the emitter
-   node moves by hundreds of mV in normal test light. The node drives
-   **PA1 = ADC1_IN1** through a 100 Ω series resistor. This resistor is the
-   complete analog front end.
+1. **Sensor front end.** The SFH 309 FA phototransistor and BC547 NPN form an
+   inverting cascode stage (see Wiring). Its output drives **PA1 = ADC1_IN1**
+   through a 100 Ω series resistor.
 2. **Sampling grid.** A hardware timer starts one 12-bit ADC conversion each
    **2.000 µs** (500 kS/s). The sampling instants are hardware events. No
    software can move them.
@@ -216,48 +213,46 @@ serial terminal (`pio device monitor`). No host-side software is necessary.
 | Part | Notes |
 |------|-------|
 | Black Pill board with [STM32F103C8T6](https://www.st.com/en/microcontrollers-microprocessors/stm32f103c8.html) | 64 KiB flash. For a 128 KiB clone, build the `blackpill_f103c8_128` env |
-| SFH 309 FA phototransistor ([datasheet](https://look.ams-osram.com/m/48f3c58ae57c5dfc/original/SFH-309.pdf)) and its cascode stage | Si NPN, T1 3 mm radial. Point the lens at the shutter. The cascode stage inverts the signal, see *Polarity convention* above |
+| SFH 309 FA phototransistor ([datasheet](https://look.ams-osram.com/m/48f3c58ae57c5dfc/original/SFH-309.pdf)) and BC547 NPN | Build the cascode stage shown in Wiring. Point the lens at the shutter |
 | [ST-Link/V2](https://www.st.com/en/development-tools/st-link-v2.html) programmer | Flashes the board over SWD. Any STM32 SWD probe works |
-| `R_E` 1 kΩ, series 100 Ω, 1 nF (optional) | The series resistor is mandatory. The capacitor filters HF noise only |
+| R1, R2, RL: 10 kΩ each; series 100 Ω; 1 nF optional | Use the component values and connections shown in Wiring |
 | USB cable, board 3V3/GND | The board supplies the front end. Keep 5 V away from PA1 |
 
-The firmware needs only two things from the sensor head: the two plateau
-levels and which of them is the dark one. The head in use adds a cascode
-stage between the sensor node and PA1, to get the response speed it needs.
-That stage inverts the signal. The wiring table below is the direct-coupled
-head (emitter follower, non-inverting). The firmware handles both through one
-compile-time constant, `Polarity::kDarkHigh` for the inverting head.
+The cascode stage inverts the signal. The firmware uses `Polarity::kDarkHigh`
+for this sensor head.
 
 ## Wiring
 
-The complete front end operates from **3V3**. Keep 5 V away from the MCU pin.
-PA1 is an ADC pin. Never let the node go above 3V3 + 0.3 V. The cascode stage
-must stay inside that range at both plateaus.
+The schematic shows the sensor head and its connection to PA1. It operates from
+**3V3**. Keep 5 V away from the circuit. Never let PA1 go above 3V3 + 0.3 V.
 
-| From                        | To                                | Notes |
-|-----------------------------|-----------------------------------|-------|
-| SFH 309 FA collector        | 3V3                               | Long lead |
-| SFH 309 FA emitter          | node A                            | Pin 1 / short lead. Point the lens at the shutter. The half angle is only ±12° |
-| `R_E` 1 kΩ                  | node A → GND                      | Controls amplitude and speed. 1 kΩ is the t_r/t_f condition in the datasheet. 100 Ω is faster, but it needs more light |
-| Series 100 Ω                | node A → PA1                      | Mandatory. Limits the ADC sampling-charge kick and the fault current. The ADC sample time is dimensioned for the total ≈1.1 kΩ source impedance |
-| 1 nF (optional)             | PA1 → GND, at the pin             | HF noise only. Do not use 100 nF here: with `R_E` = 1 kΩ, that value gives a 100 µs time constant and it smears a 250 µs pulse. 1 nF adds ≈1 µs of delay to both edges. The delay cancels in the width |
-| Black Pill                  | USB → PC                          | The board 3V3/GND supply the front end |
+![SFH 309 FA cascode front-end schematic](docs/sfh309-cascode.svg)
+
+R1 and R2 form an equal divider. Use 10 kΩ for each to set Q2's base to
+`V_bias` ≈ 1.65 V. Q2 is a BC547. It keeps the SFH 309 FA collector voltage
+nearly constant to improve its response speed. RL is 10 kΩ. It converts the
+collector current to an output voltage. Light pulls the output down toward
+`V_bias`. The drawing omits `RS` and `C1`. Fit the 100 Ω series resistor
+between the output and PA1. C1 is optional: use 1 nF from PA1 to GND to filter
+high-frequency noise.
+
+Regenerate the image with `uv run docs/generate_schematic.py`.
 
 ### Hardware build
 
-Build the sensor head first. Then wire it to the board. Then flash and check.
-
-1. Build on breadboard or perfboard. Keep all leads short.
-2. Connect the phototransistor collector (long lead) to 3V3. Connect the emitter (short lead) to node A.
-3. Connect `R_E` 1 kΩ from node A to GND.
-4. Connect node A to PA1 through the 100 Ω series resistor. Do not omit it. It limits the sampling kick and the fault current.
-5. Optional: fit 1 nF from PA1 to GND at the pin. It filters HF noise only. Do not use 100 nF: it smears a 250 µs pulse.
-6. Power the front end from the board 3V3 and GND. Keep 5 V away from PA1. Never exceed 3V3 + 0.3 V on the pin.
-7. Wire the ST-Link to SWD (3V3, GND, PA13 = SWDIO, PA14 = SWCLK) and flash with `pio run -t upload`.
-8. Connect the board USB to the PC and open `pio device monitor`. Expect the `shuttercheck exposure` header line.
-9. Point the lens at the shutter. The half angle is only ±12°. Shine a steady test light through the shutter at the sensor.
-10. Set the light level so the lit plateau stays near V_bias (about half scale) and the dark plateau stays clear of full scale. If the monitor prints `clipped`, the dark plateau is at the rail: reduce the cascode gain or add a divider. If it prints `weak`, add light.
-11. Fire the shutter. Expect one `<exposure ns> ok` line and one LED flash per accepted sample.
+1. Build the circuit as shown. Keep the leads short. Connect board 3V3 and GND
+   to the sensor head. Keep 5 V away from PA1.
+2. Connect the ST-Link to SWD (3V3, GND, PA13 = SWDIO, PA14 = SWCLK). Flash
+   with `pio run -t upload`.
+3. Connect the board USB to the PC and open `pio device monitor`. Expect the
+   `shuttercheck exposure` header line.
+4. Point the lens at the shutter. Its half angle is only ±12°. Shine a steady
+   test light through the shutter at the sensor.
+5. Set the light level so the lit plateau stays near `V_bias` and the dark
+   plateau stays below full scale. If the monitor prints `clipped`, reduce the
+   cascode gain. If it prints `weak`, add light.
+6. Fire the shutter. Expect one `<exposure ns> ok` line and one LED flash for
+   each accepted sample.
 
 Front-end sizing:
 
