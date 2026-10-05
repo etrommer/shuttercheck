@@ -3,10 +3,10 @@
 # requires-python = ">=3.10"
 # dependencies = ["schemdraw==0.23"]
 # ///
-"""Generate the SFH 309 FA cascode schematic as an SVG.
+"""Generate the sensor and ADC test circuit schematics as SVGs.
 
-Run it with `uv run docs/generate_schematic.py`. It rewrites
-sfh309-cascode.svg in this directory.
+Run it with `uv run docs/generate_schematic.py`. It writes
+`sfh309-cascode.svg` and `adc-test-circuit.svg` in this directory.
 """
 
 from pathlib import Path
@@ -15,14 +15,15 @@ import schemdraw
 import schemdraw.elements as elm
 import schemdraw.flow as flow
 
-OUTPUT = Path(__file__).with_name("sfh309-cascode.svg")
+CASCODE_OUTPUT = Path(__file__).with_name("sfh309-cascode.svg")
+TEST_OUTPUT = Path(__file__).with_name("adc-test-circuit.svg")
 
 
-def main():
+def draw_cascode():
     rail_y = 6.0
     base_y = 3.0
 
-    with schemdraw.Drawing(file=str(OUTPUT), show=False) as d:
+    with schemdraw.Drawing(file=str(CASCODE_OUTPUT), show=False) as d:
         d.config(unit=2.5, fontsize=10)
 
         # Cascode transistor Q2, its base driven by the V_bias tap.
@@ -58,5 +59,32 @@ def main():
         d.add(elm.Line().endpoints((0, 0), (t1.emitter.x, 0)))
 
 
+def draw_test_circuit():
+    """Draw the PA0 pulse source and PA1 divider used by the ADC self-test."""
+    with schemdraw.Drawing(file=str(TEST_OUTPUT), show=False) as d:
+        d.config(unit=2.5, fontsize=10)
+
+        # Both pins are on one Black Pill. Stack them inside one board outline.
+        d.add(flow.Box(label="Black Pill\nSTM32F103C8T6", w=3.8, h=5.6).at((0, 3)).anchor("W"))
+        d.add(flow.Box(label="PA0\nTIM2_CH1", w=2.6, h=1.2).at((0.5, 4.6)).anchor("W"))
+        d.add(flow.Box(label="PA1\nADC1_IN1", w=2.6, h=1.2).at((0.5, 1.4)).anchor("W"))
+
+        # PA0 feeds PA1 through 1 kΩ. The 10 kΩ resistor and 5 nF capacitor
+        # form parallel loads from PA1 to ground.
+        d.add(elm.Line().endpoints((3.1, 4.6), (5.2, 4.6)))
+        d.add(elm.ResistorIEC(label="RTEST\n1 kΩ").endpoints((5.2, 4.6), (5.2, 1.4)))
+        d.add(elm.Dot().at((5.2, 1.4)))
+        d.add(elm.Line().endpoints((3.1, 1.4), (5.2, 1.4)))
+
+        d.add(elm.ResistorIEC(label="RLOAD\n10 kΩ").endpoints((5.2, 1.4), (5.2, -1.2)))
+        d.add(elm.Line().endpoints((5.2, -1.2), (5.2, -2)))
+        d.add(elm.Line().endpoints((5.2, 1.4), (7.2, 1.4)))
+        d.add(elm.Dot().at((7.2, 1.4)))
+        d.add(elm.Capacitor(label="CTEST\n5 nF").endpoints((7.2, 1.4), (7.2, -1.2)))
+        d.add(elm.Line().endpoints((7.2, -1.2), (7.2, -2)))
+        d.add(elm.Line().endpoints((5.2, -2), (7.2, -2)))
+        d.add(elm.Ground().at((6.2, -2)))
+
 if __name__ == "__main__":
-    main()
+    draw_cascode()
+    draw_test_circuit()
