@@ -20,6 +20,8 @@ The script builds and flashes the test firmware, finds the USB CDC port, reads t
 
 Before the ADC pulse section, disconnect the cascode output from PA1 and install this bridge:
 
+![ADC pulse test circuit](adc-test-circuit.svg)
+
 | From | To | Purpose |
 |---|---|---|
 | PA0 | PA1 through 1 kΩ | Pulse source from TIM2_CH1. |

@@ -135,4 +135,4 @@ For a build-time report interval of 32 chunks, add `-D DEBUG_CHUNK_INTERVAL=32` 
 
 ## Schematic source
 
-Regenerate the wiring image with `uv run docs/generate_schematic.py`.
+Run `uv run docs/generate_schematic.py` to regenerate both circuit drawings.
