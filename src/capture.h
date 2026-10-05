@@ -37,6 +37,17 @@ bool isRunning();
 // FIFO is empty. Must run from loop() only, never from an ISR.
 bool nextResult(scan::Result* out);
 
+// Clears the scan state and the result FIFO, so the next pulse starts with
+// fresh plateaus and no stale measurement. The DMA keeps capturing. The
+// on-device self test calls it before the conditioning pulse (issue 18).
+void resetScan();
+#if defined(ON_DEVICE_TEST)
+// Reset and read scan timing and overwritten-half counters for the ADC test.
+void resetTestStats();
+uint32_t maxScanCycles();
+uint32_t overwrittenHalves();
+#endif
+
 #if defined(SHUTTERCHECK_DEBUG)
 // The scan state, so the debug report can show the plateaus, the span and the
 // threshold (issue 12). debug.cpp is the only caller.

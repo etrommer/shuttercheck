@@ -37,8 +37,19 @@ uint32_t g_lostHalves = 0;
 // The half of the last scan; 2 means no scan yet.
 uint32_t g_lastHalf = 2;
 #endif
+#if defined(ON_DEVICE_TEST)
+uint32_t g_maxScanCycles = 0;
+#endif
+#if defined(ON_DEVICE_TEST)
+volatile uint32_t g_testOverwrittenHalves = 0;
+#endif
 
-void onHalfFinished(uint32_t idx) { g_readyHalf = idx; }
+void onHalfFinished(uint32_t idx) {
+#if defined(ON_DEVICE_TEST)
+  if (g_readyHalf < 2) ++g_testOverwrittenHalves;
+#endif
+  g_readyHalf = idx;
+}
 
 }  // namespace
 
@@ -63,6 +74,14 @@ extern "C" void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
 }
 
 void begin() {
+#if defined(ON_DEVICE_TEST)
+  // The HAL has no DWT cycle-counter API. Measure scan time only in the
+  // on-device test so it can enforce the DMA half-buffer deadline.
+  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+  DWT->CYCCNT = 0;
+  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+  g_testOverwrittenHalves = 0;
+#endif
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_TIM3_CLK_ENABLE();
   __HAL_RCC_ADC1_CLK_ENABLE();
@@ -154,10 +173,25 @@ bool processNextHalf() {
   // so the scan reads it at thread priority as a plain array.
   // The polarity is a template parameter (issue 10): this build drives the
   // cascode front end, which is inverting, so dark is the high plateau.
+#if defined(ON_DEVICE_TEST)
+  uint32_t scanStart = DWT->CYCCNT;
+#endif
   scan::scan<scan::Polarity::kDarkHigh>(&buffer[idx * kHalfSamples],
                                        kHalfSamples, &g_state, &g_fifo);
+#if defined(ON_DEVICE_TEST)
+  uint32_t elapsed = DWT->CYCCNT - scanStart;
+  if (elapsed > g_maxScanCycles) g_maxScanCycles = elapsed;
+#endif
   return true;
 }
+#if defined(ON_DEVICE_TEST)
+void resetTestStats() {
+  g_maxScanCycles = 0;
+  g_testOverwrittenHalves = 0;
+}
+uint32_t maxScanCycles() { return g_maxScanCycles; }
+uint32_t overwrittenHalves() { return g_testOverwrittenHalves; }
+#endif
 
 #if defined(SHUTTERCHECK_DEBUG)
 const scan::State& state() { return g_state; }
@@ -171,6 +205,13 @@ bool isRunning() {
                    HAL_ADC_STATE_REG_BUSY;
   const bool dma = HAL_DMA_GetState(&hdma_adc1) == HAL_DMA_STATE_BUSY;
   return adc && dma;
+}
+
+// Fresh plateaus and no stale measurement for the next generated pulse
+// (issue 18). The DMA keeps capturing while the state is clear.
+void resetScan() {
+  scan::initState(&g_state);
+  scan::fifoInit(&g_fifo);
 }
 
 bool nextResult(scan::Result* out) { return scan::fifoPop(&g_fifo, out); }
