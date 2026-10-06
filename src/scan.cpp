@@ -26,9 +26,6 @@ constexpr int32_t kFullScale = 4095;  // 12-bit full count.
 constexpr int32_t kClippedMargin = 32;
 constexpr int32_t kWeakMinSpan = 48;
 constexpr uint32_t kPeriodNs = 2000;
-}  // namespace
-namespace {
-
 
 // True when the dark plateau is the high plateau: the cascode front end.
 template <Polarity P>
@@ -41,7 +38,6 @@ template <Polarity P>
 constexpr bool upOpensShutter() {
   return !darkIsHigh<P>();
 }
-template <Polarity P>
 inline int32_t currentThr(const State& s) {
   return (s.dark + s.bright) / 2;
 }
@@ -103,7 +99,7 @@ struct Band {
 
 template <Polarity P>
 inline Band bandOf(const State& s) {
-  int32_t thr = currentThr<P>(s);
+  int32_t thr = currentThr(s);
   int32_t half = currentBand<P>(s) / 2;
   return Band{thr, thr - half, thr + half};
 }
@@ -216,28 +212,17 @@ inline bool onDarkSide(int32_t v, int32_t thr) {
   return darkIsHigh<P>() ? (v > thr) : (v < thr);
 }
 
+// Detect an opening or stale crossing while no pulse is open. Closing edges
+// use the threshold locked by the opening edge in the pulse-open path.
 template <Polarity P>
 inline Crossing detectCrossing(const State& l, int32_t v, const Band& b) {
-  // The re-arm: prev must lie beyond the band edge on the dark side, and the
-  // new sample must reach the threshold on the light side. That is an
-  // opening crossing. `prev` on the dark side of the threshold is redundant:
-  // the band edges sit at thr -+ half with half >= 4, so a prev beyond the
-  // dark-side edge already implies prev beyond the threshold.
+  // A prev beyond the dark-side band edge is also beyond the threshold.
   const bool prevOnDarkSide = darkIsHigh<P>() ? (l.prev >= b.highEdge)
                                               : (l.prev <= b.lowEdge);
   const bool vOnLightSide = onLightSide<P>(v, b.thr);
   const Crossing opens = darkIsHigh<P>() ? Crossing::kDown : Crossing::kUp;
-  const Crossing closes = darkIsHigh<P>() ? Crossing::kUp : Crossing::kDown;
   if (prevOnDarkSide && vOnLightSide) return opens;
-  if (pulseIsOpen(l)) {
-    // An open pulse closes when the signal falls back through its locked
-    // threshold.
-    const bool prevPastThr = darkIsHigh<P>() ? (l.prev <= l.scanThr)
-                                             : (l.prev >= l.scanThr);
-    const bool vBackOnDark = onDarkSide<P>(v, l.scanThr);
-    return (prevPastThr && vBackOnDark) ? closes : Crossing::kNone;
-  }
-  // A lone return crossing is reported as stale only after confirmation.
+
   const bool prevOnLightSide = darkIsHigh<P>() ? (l.prev <= b.lowEdge)
                                                : (l.prev >= b.highEdge);
   const bool vOnDarkSide = onDarkSide<P>(v, b.thr);
@@ -300,6 +285,7 @@ inline void finishPulse(State* l, ResultFifo* fifo) {
   l->hitRail = 0;
   l->candidateNs = 0;
 }
+
 }  // namespace
 
 void initState(State* s) { *s = State{}; }
@@ -418,9 +404,7 @@ void scan(const uint16_t* samples, uint32_t count, State* s,
                       : ExcursionPhase::kDarkArmed;
         break;
       case ExcursionPhase::kPulseOpen:
-        if (c != Crossing::kNone) {
-          startClosingCandidate(&l, v, chunkStart + k);
-        }
+        // Open pulses are handled by the earlier fast path.
         break;
       case ExcursionPhase::kClosingCandidate:
         if (onDarkSide<P>(v, l.scanThr)) {
