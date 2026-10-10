@@ -184,12 +184,55 @@ void test_single_sample_dip_at_chunk_boundary_is_ignored() {
   scan::Result result;
   TEST_ASSERT_TRUE(!scan::fifoPop(&fifo, &result));
 }
+// A gradual edge must register (issue 26). A sharp pulse first widens the
+// plateaus, so the hysteresis band is wide. A following pulse with linear
+// edges then moves less than a band width per sample. The crossing must be a
+// threshold straddle, or the signal enters the band unseen and no result
+// comes out. Both pulses must give one ok result.
+void test_slow_linear_edge_registers() {
+  constexpr uint16_t kDark = 4000;
+  constexpr uint16_t kLit = 140;
+  constexpr uint32_t kLead = 512;  // Dark samples around each pulse.
+  constexpr uint32_t kEdge = 64;   // Samples per linear edge (128 us).
+  constexpr uint32_t kOpen = 300;  // Lit samples between the two edges.
+  static uint16_t samples[2 * kLead + kEdge + kOpen + kLead];
+  uint32_t i = 0;
+  for (uint32_t n = 0; n < kLead; ++n) samples[i++] = kDark;
+  for (uint32_t n = 0; n < kLead; ++n) samples[i++] = kLit;   // Sharp pulse.
+  for (uint32_t n = 0; n < kLead; ++n) samples[i++] = kDark;
+  for (uint32_t n = 1; n <= kEdge; ++n) {
+    samples[i++] = (uint16_t)(kDark + (kLit - kDark) * n / kEdge);
+  }
+  for (uint32_t n = 0; n < kOpen; ++n) samples[i++] = kLit;
+  for (uint32_t n = 1; n <= kEdge; ++n) {
+    samples[i++] = (uint16_t)(kLit + (kDark - kLit) * n / kEdge);
+  }
+  for (uint32_t n = 0; n < kLead; ++n) samples[i++] = kDark;
+
+  scan::State state;
+  scan::initState(&state);
+  scan::ResultFifo fifo;
+  scan::fifoInit(&fifo);
+  for (uint32_t off = 0; off < i; off += scan::kChunkSamples) {
+    uint32_t chunk = i - off;
+    if (chunk > scan::kChunkSamples) chunk = scan::kChunkSamples;
+    scan::scan<scan::Polarity::kDarkHigh>(samples + off, chunk, &state, &fifo);
+  }
+
+  scan::Result result;
+  TEST_ASSERT_TRUE(scan::fifoPop(&fifo, &result));
+  TEST_ASSERT_EQUAL_STRING("ok", scan::statusName(result.status));
+  TEST_ASSERT_TRUE(scan::fifoPop(&fifo, &result));
+  TEST_ASSERT_EQUAL_STRING("ok", scan::statusName(result.status));
+  TEST_ASSERT_TRUE(result.exposureNs > 0);
+  TEST_ASSERT_TRUE(!scan::fifoPop(&fifo, &result));
+}
 void test_case0_clean_1_1000() { runCase(0); }
 void test_case1_clean_1_4000() { runCase(1); }
 void test_case2_crossing_across_chunk() { runCase(2); }
 void test_case3_clipped() { runCase(3); }
 void test_case4_weak() { runCase(4); }
-void test_case5_stale() { runCase(5); }
+void test_case5_band_rest_then_pulse() { runCase(5); }
 void test_case6_band_noise() { runCase(6); }
 void test_case7_two_pulses() { runCase(7); }
 void test_case8_cascode_dark_at_rail() { runCase(8); }
@@ -205,12 +248,13 @@ int main() {
   RUN_TEST(test_single_sample_rise_does_not_emit_result);
   RUN_TEST(test_single_sample_dip_does_not_close_open_pulse);
   RUN_TEST(test_single_sample_dip_at_chunk_boundary_is_ignored);
+  RUN_TEST(test_slow_linear_edge_registers);
   RUN_TEST(test_case0_clean_1_1000);
   RUN_TEST(test_case1_clean_1_4000);
   RUN_TEST(test_case2_crossing_across_chunk);
   RUN_TEST(test_case3_clipped);
   RUN_TEST(test_case4_weak);
-  RUN_TEST(test_case5_stale);
+  RUN_TEST(test_case5_band_rest_then_pulse);
   RUN_TEST(test_case6_band_noise);
   RUN_TEST(test_case7_two_pulses);
   RUN_TEST(test_case8_cascode_dark_at_rail);

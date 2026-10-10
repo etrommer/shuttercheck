@@ -74,13 +74,15 @@ case(100, 4080, pulse(100, 4080, 500, 256, 64), [(0, "clipped")])
 # 4. Plateau span below 48 LSB => weak.
 case(100, 120, pulse(100, 120, 200, 256, 64), [(0, "weak")])
 
-# 5. A lone crossing without its partner => stale. The signal sits in the
-#    hysteresis band (106: below the boot threshold 108, above the low band
-#    edge 104), so the jump up to bright does not re-arm and does not register
-#    as an opening edge. The subsequent crossing back to dark has no partner of
-#    its own: stale. Mirrored, the lone edge is the rising one.
+# 5. A signal that rests in the hysteresis band and then crosses the threshold.
+#    The last sample before the jump (106) is inside the band: above the low
+#    band edge (104) and below the boot threshold (108). A crossing is a
+#    threshold straddle (issue 26), so the jump to bright opens a pulse and the
+#    return to dark closes it. The result is one measured pulse, not a lone
+#    crossing. The two polarities interpolate the straddle with a small
+#    rounding difference.
 case(100, 2500, plateau(100, 8) + plateau(106, 8) + plateau(2500, 16)
-     + plateau(100, 8), [(0, "stale")])
+     + plateau(100, 8), [(32005, "ok")], [(31995, "ok")])
 
 # 6. Noise inside the hysteresis band: no extra crossing, no re-arm. The 200
 #    sample bright plateau carries a few dips down into the hysteresis band
