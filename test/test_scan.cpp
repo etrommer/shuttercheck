@@ -230,13 +230,14 @@ void test_slow_linear_edge_registers() {
 void test_case0_clean_1_1000() { runCase(0); }
 void test_case1_clean_1_4000() { runCase(1); }
 void test_case2_crossing_across_chunk() { runCase(2); }
-void test_case3_clipped() { runCase(3); }
+void test_case3_lit_plateau_at_rail() { runCase(3); }
 void test_case4_weak() { runCase(4); }
 void test_case5_band_rest_then_pulse() { runCase(5); }
 void test_case6_band_noise() { runCase(6); }
 void test_case7_two_pulses() { runCase(7); }
 void test_case8_cascode_dark_at_rail() { runCase(8); }
 void test_case9_cascode_operating_point() { runCase(9); }
+void test_case10_full_range() { runCase(10); }
 
 // The shared entry point is test/test_main.cpp: this function and
 // runReportTests() run in one binary.
@@ -253,11 +254,12 @@ void runScanTests() {
   RUN_TEST(test_case0_clean_1_1000);
   RUN_TEST(test_case1_clean_1_4000);
   RUN_TEST(test_case2_crossing_across_chunk);
-  RUN_TEST(test_case3_clipped);
+  RUN_TEST(test_case3_lit_plateau_at_rail);
   RUN_TEST(test_case4_weak);
   RUN_TEST(test_case5_band_rest_then_pulse);
   RUN_TEST(test_case6_band_noise);
   RUN_TEST(test_case7_two_pulses);
   RUN_TEST(test_case8_cascode_dark_at_rail);
   RUN_TEST(test_case9_cascode_operating_point);
+  RUN_TEST(test_case10_full_range);
 }

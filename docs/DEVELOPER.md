@@ -57,7 +57,6 @@ A confirmed crossing back to dark when no pulse is open is `stale`: it has no ma
 
 ### Rejection rules
 
-- `clipped`: a raw sample on the rail-side plateau reaches 4063 or more. This is 32 LSB below the 4095 full-scale value. The rail flag stays set for the excursion and clears when the pulse closes. With the cascode head, the rail-side plateau is dark. The scan checks raw samples because an integer moving average can stop about 64 LSB below a constant input.
 - `weak`: the distance between the plateau estimates is less than 48 LSB, about 40 mV. The midpoint is then too close to the effective ADC noise floor.
 
 A raw sample may not reach or exceed the ADC supply. For the F103, keep PA1 below 3.3 V + 0.3 V.
@@ -91,7 +90,7 @@ Accuracy contributors:
 | Optical edge shape | This is the largest error at fast speeds. At 1/4000 s, the shutter slit is only a little wider than the sensor chip. The light edge can be tens of microseconds wide. Measuring both edges at the same fraction of the plateau swing reduces this error. |
 | Plateau drift | A changing light level, especially a decaying xenon flash, moves the estimated midpoint and biases the width. Use a repeatable light source. |
 
-Expect about 0.1% class from 1/30 s to 1/2 s with a repeatable setup. Expect a few percent at 1/4000 s; shutter geometry dominates. Saturation recovery can make fast readings long. The `clipped` status reports a front end near the ADC rail.
+Expect about 0.1% class from 1/30 s to 1/2 s with a repeatable setup. Expect a few percent at 1/4000 s; shutter geometry dominates. Saturation recovery can make fast readings long.
 
 ## Exposure report
 
@@ -133,13 +132,13 @@ pio device monitor
 
 The build prints one report every 16 scanned chunks, about 61 reports per second. It prints a legend before the first report. Levels are in 12-bit ADC LSB. `DEBUG_CHUNK_INTERVAL` is a compile-time constant; set it in the debug build flags to change the interval. There is no runtime setting.
 
-One report is about 155 bytes. The normal CDC queue holds 128 bytes. The debug environment raises the queue to eight 64-byte packets so a report does not block `loop()` and cause lost buffer halves.
+One report is about 140 bytes. The normal CDC queue holds 128 bytes. The debug environment raises the queue to eight 64-byte packets so a report does not block `loop()` and cause lost buffer halves.
 
 Example:
 
 ```text
 # shuttercheck debug: one report per 16 scanned chunks; levels in LSB
-#48 min=2041 max=3903 lo=2038 hi=3904 dark=3896 bright=2049 span=1847 thr=2972 band=230 rail=0 pulse=0 lost=0 ok=3 stale=0 clip=0 weak=0 last=ok ns=500000
+#48 min=2041 max=3903 lo=2038 hi=3904 dark=3896 bright=2049 span=1847 thr=2972 band=230 pulse=0 lost=0 ok=3 stale=0 weak=0 last=ok ns=500000
 ```
 
 | Field | Meaning |
@@ -151,14 +150,13 @@ Example:
 | `span` | Positive distance between the two plateaus. |
 | `thr` | Midpoint threshold. |
 | `band` | Full hysteresis band width. |
-| `rail` | `1` while the rail latch is set for the current excursion. |
 | `pulse` | `1` while a pulse is open or a close is being confirmed. |
 | `lost` | Buffer halves overwritten before the scan processed them. Keep this at `0`. |
-| `ok`, `stale`, `clip`, `weak` | Accepted pulses and each rejection count since start. |
+| `ok`, `stale`, `weak` | Accepted pulses and each rejection count since start. |
 | `last` | Status of the last result, or `none`. |
 | `ns` | Exposure of the last result, or `0`. |
 
-A rising `lost` value means the scan or printing cannot keep up. `min`/`max` show recent levels; `lo`/`hi` show whether a level moved between reports. A `span` below 48 LSB produces `weak`. A raw level within 32 LSB of full scale produces `clipped`.
+A rising `lost` value means the scan or printing cannot keep up. `min`/`max` show recent levels; `lo`/`hi` show whether a level moved between reports. A `span` below 48 LSB produces `weak`.
 
 For a build-time report interval of 32 chunks, add `-D DEBUG_CHUNK_INTERVAL=32` to the debug environment's build flags. Longer intervals reduce USB output.
 

@@ -22,8 +22,6 @@ namespace scan {
 namespace {
 constexpr int32_t kInitSpread = 16;   // Boot bright estimate above dark (LSB).
 constexpr int32_t kEmaK = 64;         // Plateau EMA lambda (power of two).
-constexpr int32_t kFullScale = 4095;  // 12-bit full count.
-constexpr int32_t kClippedMargin = 32;
 constexpr int32_t kWeakMinSpan = 48;
 constexpr uint32_t kPeriodNs = 2000;
 }  // namespace
@@ -67,29 +65,12 @@ inline int64_t interpolateNs(int32_t v0, int32_t v1, int32_t level,
 }
 template <Polarity P>
 inline Status classify(const State& s) {
-  // Clipped is decided on the raw excursion, not the plateau estimate: the
-  // integer EMA stalls about K LSB below a plateau (its increment floors to
-  // zero), so it can never approach full scale closely enough to signal a
-  // rail hit. A latch on the raw samples is exact.
-  if (s.hitRail) return Status::kClipped;
   if (plateauSpan<P>(s) < kWeakMinSpan) return Status::kWeak;
   return Status::kOk;
 }
 inline bool pulseIsOpen(const State& s) {
   return s.phase == ExcursionPhase::kPulseOpen ||
          s.phase == ExcursionPhase::kClosingCandidate;
-}
-
-// The rail latch: the front end can only drive its rail-side plateau to full
-// scale, so a raw sample of the other plateau near full scale says nothing
-// about this excursion. With kDarkLow the bright plateau is the rail side and
-// its samples arrive inside the open pulse. With kDarkHigh the dark plateau
-// is the rail side and its samples arrive while the shutter is closed, before
-// the pulse opens. Both compile to one compare per sample.
-template <Polarity P>
-inline bool hitsRail(const State& l, int32_t v) {
-  if (v < kFullScale - kClippedMargin) return false;
-  return pulseIsOpen(l) == upOpensShutter<P>();
 }
 
 // Band geometry for one sample: the threshold and its hysteresis edges.
@@ -151,10 +132,6 @@ inline void trackExtremes(State* l, int32_t v) {
 //  B. prev sits exactly on dark or bright -> each equal sample leaves the
 //     EMA at its value (the update is a no-op) and cannot cross. prev and
 //     prevInBand stay put.
-// A run is skipped only when it cannot latch the rail flag either, so a
-// saturated plateau still reaches the full path: case A needs highEdge below
-// the rail zone, case B needs the plateau value below it. Both tests sit
-// inside the branch they guard, so the full path pays nothing for them.
 // Samples at the exact band edges stay on the full path: prev at an edge is
 // an armed state.
 // Returns true when a run was skipped.
@@ -169,7 +146,6 @@ inline bool skipQuietRun(State* l, const uint16_t* samples, uint32_t* k,
     // Case A: run of strictly-in-band samples. A run that stays on one side
     // of the threshold holds no crossing; a run that reaches the threshold
     // can hold an opening crossing, so it stays on the full path.
-    if (b.highEdge >= kFullScale - kClippedMargin) return false;
     const bool darkSideRun =
         darkIsHigh<P>() ? (l->prev > b.thr) : (l->prev < b.thr);
     const bool firstDark =
@@ -193,7 +169,6 @@ inline bool skipQuietRun(State* l, const uint16_t* samples, uint32_t* k,
   }
   if ((l->prev == l->dark || l->prev == l->bright) &&
       samples[*k] == l->prev) {
-    if (l->prev >= kFullScale - kClippedMargin) return false;
     // Case B: run of samples equal to the plateau.
     uint32_t run = 1;
     while (*k + run < count && samples[*k + run] == l->prev) ++run;
@@ -300,7 +275,6 @@ inline void startClosingCandidate(State* l, int32_t v, uint64_t index) {
 }
 
 // Confirmed closing edge: classify and publish the saved first-crossing time.
-// The rail latch belongs to this excursion and is released after the result.
 template <Polarity P>
 inline void finishPulse(State* l, ResultFifo* fifo) {
   Result r;
@@ -309,7 +283,6 @@ inline void finishPulse(State* l, ResultFifo* fifo) {
       r.status == Status::kOk ? (l->candidateNs - l->riseNs) : 0;
   fifoPush(fifo, r);
   l->phase = ExcursionPhase::kDarkArmed;
-  l->hitRail = 0;
   l->candidateNs = 0;
 }
 }  // namespace
@@ -363,9 +336,6 @@ void scan(const uint16_t* samples, uint32_t count, State* s,
     // During an open pulse, the previous sample is on the light side of the
     // locked threshold. Only the return crossing can occur in this phase.
     if (l.phase == ExcursionPhase::kPulseOpen) {
-      if (upOpensShutter<P>() && v >= kFullScale - kClippedMargin) {
-        l.hitRail = 1;
-      }
       const bool crossed = darkIsHigh<P>()
                                ? (l.prev <= l.scanThr && v > l.scanThr)
                                : (l.prev >= l.scanThr && v < l.scanThr);
@@ -379,17 +349,14 @@ void scan(const uint16_t* samples, uint32_t count, State* s,
     }
 
     // On the dark side in the armed phase, two consecutive samples cannot
-    // open a pulse or form a stale edge. Keep plateau and rail tracking, but
-    // skip the general crossing and phase logic for this common run.
+    // open a pulse or form a stale edge. Keep plateau tracking, but skip the
+    // general crossing and phase logic for this common run.
     if (l.phase == ExcursionPhase::kDarkArmed) {
       const bool prevDarkSide = darkIsHigh<P>() ? l.prev >= b.highEdge
                                                  : l.prev <= b.lowEdge;
       const bool sampleDarkSide = darkIsHigh<P>() ? v >= b.highEdge
                                                    : v <= b.lowEdge;
       if (prevDarkSide && sampleDarkSide) {
-        if (darkIsHigh<P>() && v >= kFullScale - kClippedMargin) {
-          l.hitRail = 1;
-        }
         const bool curInBand = darkIsHigh<P>() ? v == b.highEdge
                                                 : v == b.lowEdge;
         trackDarkPlateau(&l);
@@ -400,8 +367,6 @@ void scan(const uint16_t* samples, uint32_t count, State* s,
       }
     }
 
-    // Latch rail samples from the active rail-side plateau.
-    if (hitsRail<P>(l, v)) l.hitRail = 1;
     // Detect an edge or confirm a pending candidate before updating prev.
     // A candidate sample is excluded from plateau tracking, like a crossing.
     const ExcursionPhase phase = l.phase;

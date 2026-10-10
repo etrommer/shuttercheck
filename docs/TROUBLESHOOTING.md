@@ -8,7 +8,6 @@ Keep PA1 below 3.3 V + 0.3 V. The circuit runs from 3.3 V. Do not connect 5 V to
 
 | Output | Cause | What to check |
 |---|---|---|
-| `0 clipped` | The dark, rail-side plateau is within 32 LSB of the ADC full-scale value. | Reduce the cascode gain or adjust its bias. Keep the dark plateau below 4063 LSB; about 100 LSB of headroom is a useful target. |
 | `0 weak` | The plateau span is below 48 LSB, about 40 mV. | Add light and check alignment. Keep the lit plateau near `V_bias` (about 1.65 V). |
 | `0 stale` | A crossing has no matching opening or closing crossing. | Check that the shutter makes one clear light pulse at the sensor. Reduce flicker and noise; point the sensor through the shutter and keep the setup steady. |
 | Readings are too long, especially at fast speeds | The phototransistor may be saturated. Its collector-emitter saturation voltage is about 200 mV, and stored base charge delays turn-off. | Keep the phototransistor out of saturation. Check the bias and light level. Saturation recovery delays the closing edge. |

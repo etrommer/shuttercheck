@@ -31,17 +31,15 @@ enum class Polarity : uint8_t {
 constexpr uint32_t kChunkSamples = 512;
 
 enum class Status : uint8_t {
-  kOk = 0,       // one opening + one closing crossing, verified plateaus.
-  kStale = 1,    // a crossing arrived without its partner of the same pulse.
-  kClipped = 2,  // the rail-side plateau came within 32 LSB of full scale.
-  kWeak = 3,     // plateau span below the 48 LSB noise floor.
+  kOk = 0,     // one opening + one closing crossing, verified plateaus.
+  kStale = 1,  // a crossing arrived without its partner of the same pulse.
+  kWeak = 2,   // plateau span below the 48 LSB noise floor.
 };
 
 inline const char* statusName(Status s) {
   switch (s) {
     case Status::kOk: return "ok";
     case Status::kStale: return "stale";
-    case Status::kClipped: return "clipped";
     case Status::kWeak: return "weak";
   }
   return "?";
@@ -84,9 +82,6 @@ struct State {
   uint8_t initBright;    // bright plateau initialized.
   ExcursionPhase phase;  // Current edge-qualification state.
   uint8_t prevInBand;    // prev lay inside the hysteresis band.
-  uint8_t hitRail;       // A raw sample of the rail-side plateau (which one
-                         // depends on Polarity) came within kClippedMargin of
-                         // full scale.
 #if defined(SHUTTERCHECK_DEBUG)
   // The raw extremes of the chunk in flight (issue 12). They are per chunk:
   // the report shows where one chunk sat, and the running extremes in
