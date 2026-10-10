@@ -1,15 +1,18 @@
-// shuttercheck — shutter edge scan and exposure reporting (issue 5).
+// shuttercheck — shutter edge scan and exposure reporting (issue 5; report
+// format issue 28).
 //
 // setup() starts the capture path (calibrated first). loop() runs the
 // crossing scan on each finished buffer half at thread priority, then drains
-// the result FIFO: an accepted pulse prints the exposure in nanoseconds, a
-// rejection prints a zero value, and an accepted sample flashes the LED
-// once. No measurement arithmetic happens here (design invariant 7: report
-// from loop() only).
+// the result FIFO: an accepted pulse prints the measured speed, the nearest
+// common speed and the error, the raw width only in the debug build, and an
+// accepted sample flashes the LED once. A rejection prints a zero value. No
+// measurement arithmetic happens here (design invariant 7: report from
+// loop() only).
 #if defined(ARDUINO)
 #include <Arduino.h>
 
 #include "capture.h"
+#include "report.h"
 #include "scan.h"
 #if defined(SHUTTERCHECK_DEBUG)
 #include "debug.h"
@@ -17,6 +20,16 @@
 #if defined(ON_DEVICE_TEST)
 #include "selfcheck.h"
 #endif
+
+namespace {
+// The debug build keeps the raw width on the result line, next to the
+// formatted value (issue 28). The release line has no nanosecond field.
+#if defined(SHUTTERCHECK_DEBUG)
+constexpr bool kWithRawNs = true;
+#else
+constexpr bool kWithRawNs = false;
+#endif
+}  // namespace
 
 // Failures of the on-device self test (issue 8). The LED blinks for them.
 #if defined(ON_DEVICE_TEST)
@@ -66,10 +79,10 @@ void loop() {
     debug::countResult(r);
 #endif
     if (r.status == scan::Status::kOk) {
-      // "<exposure ns> ok"
-      Serial.print(r.exposureNs);
-      Serial.print(' ');
-      Serial.println(scan::statusName(r.status));
+      // "1/403 s 1/500 +24.1%", and " ns=<raw>" in the debug build.
+      char line[report::kMaxLineBytes];
+      report::format(r.exposureNs, line, sizeof(line), kWithRawNs);
+      Serial.println(line);
       // One short flash per accepted sample; nothing on rejection.
       digitalWrite(LED_BUILTIN, LOW);
       delay(2);

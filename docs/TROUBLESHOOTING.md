@@ -23,7 +23,7 @@ The F103 ADC has 12-bit codes, but its effective resolution is closer to 9–10 
 
 The firmware sends `shuttercheck exposure` at boot. USB CDC drops data sent before the host opens the port. Open the serial monitor, then press reset to see the header again.
 
-After the header, the board prints one line for each capture. Check that the lens is pointed at the shutter and that light passes through it. A steady test light helps separate a sensor problem from flash variation. The onboard LED on PB12 flashes once for an accepted sample; it stays dark for a rejection.
+After the header, the board prints one line for each capture: the measured speed, the nearest common speed and the error against it. For example `1/403 s 1/500 +24.1%`. A line that starts with `0` is a rejection. Check that the lens is pointed at the shutter and that light passes through it. A steady test light helps separate a sensor problem from flash variation. The onboard LED on PB12 flashes once for an accepted sample; it stays dark for a rejection.
 
 If the board does not create a USB serial port, check the cable and board. The STM32F103 needs a 1.5 kΩ pull-up from PA12 to 3V3 for USB. The Black Pill has this resistor. The firmware USB CDC stack also needs the board to run, so press reset if a previous upload left the core halted.
 

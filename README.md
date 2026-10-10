@@ -9,7 +9,7 @@ The design needs no external comparator or trimpot.
 ## At a glance
 
 - **Measurement range:** 1/4000 s to 6 s.
-- **Output:** one `<exposure ns> ok` line for an accepted capture. Rejections print `0 <status>`.
+- **Output:** one line per accepted capture with the measured speed, the nearest common speed and the error. For example `1/403 s 1/500 +24.1%`. Rejections print `0 <status>`.
 - **Connection:** USB CDC serial. No host software is needed beyond a serial terminal.
 - **Front end:** SFH 309 FA phototransistor and BC547 cascode circuit.
 
@@ -56,13 +56,18 @@ Example output:
 
 ```text
 shuttercheck exposure
-2481234 ok
+1/403 s 1/500 +24.1%
 0 stale
 0 clipped
 0 weak
 ```
 
-The measurement is in nanoseconds. `2481234 ns` is about 2.48 ms, or 1/403 s.
+The first field is the measured exposure: `1/n s`, or seconds from 0.5 s up.
+The second field is the nearest common shutter speed, from 1/4000 s to 8 s.
+The third field is the error of the measurement against that speed, in percent
+of the nominal. A `+` sign means the shutter ran longer than the mark.
+The debug build adds the raw width as `ns=<value>`; see the
+[developer reference](docs/DEVELOPER.md).
 The PB12 LED flashes once for an accepted capture. It stays dark for a rejection.
 
 | Status | Meaning |
