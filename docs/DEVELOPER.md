@@ -93,6 +93,35 @@ Accuracy contributors:
 
 Expect about 0.1% class from 1/30 s to 1/2 s with a repeatable setup. Expect a few percent at 1/4000 s; shutter geometry dominates. Saturation recovery can make fast readings long. The `clipped` status reports a front end near the ADC rail.
 
+## Exposure report
+
+`src/report.cpp` formats one line per accepted capture. It is presentation
+only: pure integer, `stdint.h` only, no HAL, no Arduino. It touches no
+measurement value. The `printf` of this toolchain has no long long width, so
+the module writes into a buffer and `main.cpp` prints that buffer.
+
+| Field | Meaning |
+|---|---|
+| Measured | `1/n s` with three significant digits below 0.5 s, seconds with two decimals from 0.5 s up. Trailing zeros are not significant: an exact 1/8 s prints `1/8 s`. |
+| Mark | The nearest common speed. The search takes the smallest `|measured - nominal| / nominal`; a tie goes to the faster mark. |
+| Error | The same error in percent of the nominal, one decimal and signed. `+` means the measurement is longer than the mark. |
+
+The nominal of a mark is `1e9 / denom` ns, so the mark and the error always
+name the same number. The table holds 16 marks: 1/4000, 1/2000, 1/1000, 1/500,
+1/250, 1/125, 1/60, 1/30, 1/15, 1/8, 1/4, 1/2, 1, 2, 4 and 8 s.
+
+An in-range line stays below 64 bytes, so one write never fills the 128-byte
+CDC transmit queue. The debug build appends the raw width to each result line:
+`1/403 s 1/500 +24.1% ns=2481234`.
+
+Example lines:
+
+```text
+1/403 s 1/500 +24.1%
+1/60.6 s 1/60 -1.0%
+2.10 s 2 s +5.0%
+```
+
 ## Debug build
 
 The debug build reports capture and scan state over the CDC port. Release builds do not include the debug module or raw-extreme tracking.

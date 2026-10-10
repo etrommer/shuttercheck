@@ -238,8 +238,9 @@ void test_case7_two_pulses() { runCase(7); }
 void test_case8_cascode_dark_at_rail() { runCase(8); }
 void test_case9_cascode_operating_point() { runCase(9); }
 
-int main() {
-  UNITY_BEGIN();
+// The shared entry point is test/test_main.cpp: this function and
+// runReportTests() run in one binary.
+void runScanTests() {
   RUN_TEST(test_debug_extremes_of_a_skipped_flat_chunk);
   RUN_TEST(test_debug_extremes_of_a_chunk_with_a_step);
   RUN_TEST(test_debug_extremes_reset_per_chunk);
@@ -259,5 +260,4 @@ int main() {
   RUN_TEST(test_case7_two_pulses);
   RUN_TEST(test_case8_cascode_dark_at_rail);
   RUN_TEST(test_case9_cascode_operating_point);
-  return UNITY_END();
 }

@@ -2,7 +2,7 @@
 
 This guide covers the native scan tests and the on-device self test. The native tests need no board. The on-device test needs a Black Pill, an ST-Link, USB, and a test bridge for the ADC pulse checks.
 
-## Native scan tests
+## Native scan and report tests
 
 Run the native test environment:
 
@@ -10,7 +10,7 @@ Run the native test environment:
 pio test -e native
 ```
 
-PlatformIO generates the gitignored scan-vector header `test/test_data.h` before the build. The test compiles `src/scan.cpp` directly and runs the generated cases under both signal polarities. It checks scan results and rejection behavior without Arduino or STM32 hardware.
+PlatformIO generates the gitignored scan-vector header `test/test_data.h` before the build. The binary compiles `src/scan.cpp` and `src/report.cpp` directly and runs both test groups from `test/test_main.cpp`. The scan tests feed the generated cases under both signal polarities and check the results and the rejection behavior. The report tests check the formatted line: the fraction and seconds forms, the nearest speed, the error and the byte budget. Both need no Arduino and no STM32 hardware.
 
 ## On-device self test
 

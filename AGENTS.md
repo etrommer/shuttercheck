@@ -22,8 +22,9 @@ rules only: workflow, layout, commands, platform facts, invariants.
 
 ## Layout intent
 
-- `src/main.cpp` — Arduino `setup()`/`loop()`. Wiring, report formatting. No
-  measurement arithmetic beyond unit conversion.
+- `src/main.cpp` — Arduino `setup()`/`loop()`. Wiring, the result drain and
+  the LED. It prints the line that `report.cpp` formats. No measurement
+  arithmetic beyond unit conversion.
 - `src/capture.cpp` / `src/capture.h` — the capture path (timer sample clock,
   ADC, DMA) and the lightweight DMA callbacks that flag the newest finished
   buffer half. The crossing scan runs on that half from `loop()`, not in the
@@ -37,6 +38,14 @@ rules only: workflow, layout, commands, platform facts, invariants.
   new side, but keeps the first crossing time for interpolation. Pure integer,
   stdint only, free of HAL and Arduino: the native unit tests compile it
   directly. Keep it separate from reporting so the scan timing stays obvious.
+- `src/report.cpp` / `src/report.h` — the report line (issue 28): the measured
+  speed, the nearest common shutter speed and the error of the measurement
+  against it. Presentation only: pure integer, stdint only, free of HAL and
+  Arduino, so the native unit tests compile it. The `printf` of this toolchain
+  has no long long width, so the module formats into a caller buffer and
+  `main.cpp` prints that buffer. One accepted line stays below 64 bytes, so one
+  write never fills the 128-byte CDC transmit queue. The debug build appends
+  the raw width as `ns=<value>`.
 - `src/selfcheck.cpp` / `src/selfcheck.h` — the on-device self test (issue 8),
   compiled only into `ON_DEVICE_TEST` builds. It asks the HAL, capture path and
   pulsegen for peripheral state. It runs generated scan cases and reads no
@@ -66,6 +75,10 @@ rules only: workflow, layout, commands, platform facts, invariants.
   (native, asserts with Unity) and `src/selfcheck.cpp` (on device, prints
   PASS/FAIL) share one feeder and one set of expectations. Each case runs in
   both polarities: the generated stream, then its mirror.
+- `test/test_main.cpp` — the entry point of the native test binary.
+  PlatformIO compiles every file in `test/` into one binary, so
+  `runScanTests()` from `test_scan.cpp` and `runReportTests()` from
+  `test_report.cpp` share one `main`.
 - Use the STM32 HAL where possible. Go below the HAL only where the F1 HAL
   does not reach, and say why in a comment.
 
@@ -81,7 +94,7 @@ rules only: workflow, layout, commands, platform facts, invariants.
 
 ```sh
 pio run                      # build
-pio test -e native           # native scan unit tests (always with SHUTTERCHECK_DEBUG)
+pio test -e native           # native scan and report unit tests (always with SHUTTERCHECK_DEBUG)
 pio run -t upload            # flash (ST-Link over SWD)
 pio run -t clean
 pio device monitor           # read reports on the USB CDC port
@@ -167,6 +180,7 @@ Halt the core over SWD, write a known 512-sample pulse into the DMA buffer
 `g_readyHalf` to the buffer half you wrote, clear the DMA channel enable so
 nothing overwrites the data, then resume. The board prints the measurement for
 those samples over USB CDC. Get the symbol addresses per build with
-`arm-none-eabi-nm -S`: they move when the layout changes. Used on 2026-09-19 to
-show `500000 ok` for a 500-sample pulse, the same value the native build of
-`src/scan.cpp` gives.
+`arm-none-eabi-nm -S`: they move when the layout changes. A light run of W
+samples gives a width of `2000 * W` ns: 100 dark samples, 250 light samples,
+then dark gives `1/2000 s 1/2000 0.0%`. Checked on 2026-10-10, and the same
+width the native build of `src/scan.cpp` gives.
