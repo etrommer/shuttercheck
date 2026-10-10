@@ -145,7 +145,7 @@ pio run -e debug -t upload  # flash it
    belong to the same excursion. Confirm each crossing with one further sample
    on the new side. Cancel an unconfirmed excursion; keep the first crossing
    time for interpolation. A confirmed lone crossing is `stale`.
-6. Conservative failure: the rejection paths are `clipped` and `weak`. Never
+6. Conservative failure: the rejection paths are `stale` and `weak`. Never
    print a value the firmware has not verified.
 7. The scan of one buffer chunk must finish well inside that chunk's period.
    Report from `loop()` only, never from an ISR, through a small result FIFO.

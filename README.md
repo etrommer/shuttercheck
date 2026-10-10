@@ -58,7 +58,6 @@ Example output:
 shuttercheck exposure
 1/403 s 1/500 +24.1%
 0 stale
-0 clipped
 0 weak
 ```
 
@@ -74,7 +73,6 @@ The PB12 LED flashes once for an accepted capture. It stays dark for a rejection
 |---|---|
 | `ok` | One opening and one closing crossing formed a valid measurement. |
 | `stale` | A crossing had no matching edge from the same pulse. |
-| `clipped` | The dark-side ADC level was too close to full scale. |
 | `weak` | The light-to-dark signal change was too small to measure reliably. |
 
 See [Troubleshooting](docs/TROUBLESHOOTING.md) if the board prints a rejection or the serial port does not work.

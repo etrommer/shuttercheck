@@ -63,13 +63,11 @@ case(100, 2500, pulse(100, 2500, 125, 256, 64), [(ns(125), "ok")])
 #    and the falling edge in chunk 1. The width must stay correct.
 case(100, 2500, pulse(100, 2500, 180, 400, 60), [(ns(180), "ok")])
 
-# 3. The lit plateau is at the ADC rail. Under kDarkLow the firmware tracks it
-#    as the bright plateau and latches the rail flag from the samples inside
-#    the open pulse. Under kDarkHigh the mirrored stream puts the rail plateau
-#    on the dark side, which is sampled while the shutter is closed, before the
-#    pulse opens. Both are clipped: the plateau that the front end can drive to
-#    full scale is saturated either way.
-case(100, 4080, pulse(100, 4080, 500, 256, 64), [(0, "clipped")])
+# 3. The lit plateau is at the ADC rail (issue 30). A saturated plateau is
+#    valid: the full range 0..4095 measures. Under kDarkLow the rail plateau
+#    is the bright one; under kDarkHigh the mirror puts it on the dark side,
+#    sampled while the shutter is closed. Both give one measured pulse.
+case(100, 4080, pulse(100, 4080, 500, 256, 64), [(ns(500), "ok")])
 
 # 4. Plateau span below 48 LSB => weak.
 case(100, 120, pulse(100, 120, 200, 256, 64), [(0, "weak")])
@@ -101,14 +99,15 @@ case(100, 2500, pulse(100, 2500, 150, 256, 128) + pulse(100, 2500, 150, 0, 64),
 #    output rests near full scale with the shutter closed and at V_bias with it
 #    open. Written for kDarkLow, so the rail plateau (4090) is the lit one. Its
 #    mirror puts the rail plateau on the dark side, sampled while the shutter is
-#    closed, before the pulse opens. Both are clipped: the plateau that the
-#    front end can drive to full scale is saturated either way.
-case(2048, 4090, pulse(2048, 4090, 500, 256, 64), [(0, "clipped")])
+#    closed, before the pulse opens. Both measure (issue 30).
+case(2048, 4090, pulse(2048, 4090, 500, 256, 64), [(ns(500), "ok")])
 
-# 9. The same cascode geometry with the rail plateau just outside the rail zone:
-#    measured. Mirrored, the dark plateau is 4000 LSB, about 31 LSB below the
-#    32 LSB rail margin.
+# 9. The same cascode geometry with the dark plateau at 4000 LSB: measured.
 case(2048, 4000, pulse(2048, 4000, 500, 256, 64), [(ns(500), "ok")])
+
+# 10. The full range is valid (issue 30): both plateaus sit at the range ends.
+#     The span is the largest possible, so `weak` stays clear.
+case(0, 4095, pulse(0, 4095, 500, 256, 64), [(ns(500), "ok")])
 
 
 def emit_case_header(f, idx, seq, res, res_high):

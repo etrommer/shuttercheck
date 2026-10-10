@@ -28,7 +28,6 @@ int32_t g_runMin = 0x7FFFFFFF;  // Lowest raw sample since the start.
 int32_t g_runMax = -0x7FFFFFFF; // Highest raw sample since the start.
 uint32_t g_ok = 0;
 uint32_t g_stale = 0;
-uint32_t g_clip = 0;
 uint32_t g_weak = 0;
 bool g_haveResult = false;
 scan::Status g_lastStatus = scan::Status::kOk;
@@ -96,16 +95,15 @@ void printReport() {
   static char line[kLineBytes];
   const int n = snprintf(line, sizeof(line),
                          "#%u min=%d max=%d lo=%d hi=%d dark=%d bright=%d "
-                         "span=%d thr=%d band=%d rail=%u pulse=%u lost=%u "
-                         "ok=%u stale=%u clip=%u weak=%u last=%s ns=",
+                         "span=%d thr=%d band=%d pulse=%u lost=%u "
+                         "ok=%u stale=%u weak=%u last=%s ns=",
                          static_cast<unsigned>(g_chunks), s.debugMin,
                          s.debugMax, g_runMin, g_runMax, s.dark, s.bright,
                          span, thrOf(s), 2 * hysteresisHalf(span),
-                         static_cast<unsigned>(s.hitRail),
                          static_cast<unsigned>(
                              s.phase == scan::ExcursionPhase::kPulseOpen ||
                              s.phase == scan::ExcursionPhase::kClosingCandidate),
-                         capture::lostHalves(), g_ok, g_stale, g_clip, g_weak,
+                         capture::lostHalves(), g_ok, g_stale, g_weak,
                          last);
   if (n <= 0 || static_cast<size_t>(n) + kInt64Bytes + 2 > sizeof(line)) {
     return;  // Never write past the buffer.
@@ -122,7 +120,6 @@ void countResult(const scan::Result& result) {
   switch (result.status) {
     case scan::Status::kOk: ++g_ok; break;
     case scan::Status::kStale: ++g_stale; break;
-    case scan::Status::kClipped: ++g_clip; break;
     case scan::Status::kWeak: ++g_weak; break;
   }
   g_lastStatus = result.status;

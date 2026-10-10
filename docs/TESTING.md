@@ -28,7 +28,7 @@ Before the ADC pulse section, disconnect the cascode output from PA1 and install
 | PA1 | GND through 10 kΩ | Divider load. With the 1 kΩ series resistor, the high level is about 3.0 V (about 3723 ADC LSB). |
 | PA1 | GND through 5 nF | Test capacitor. |
 
-The high level (about 3723 LSB) stays below the 4063 LSB rail threshold. The 0-to-3723 LSB span is well above the 48 LSB `weak` floor. Do not replace the divider with a direct wire. A direct connection drives PA1 to the rail, so the scan correctly reports `clipped`. Without the bridge, the ADC pulse checks fail; the other checks can still run.
+The high level (about 3723 LSB) and the 0-to-3723 LSB span are well above the 48 LSB `weak` floor, so the ADC pulse checks pass. The scan accepts the full range 0..4095, so a direct wire also works; the divider keeps the level clean and away from the ADC supply. Without the bridge, the ADC pulse checks fail; the other checks can still run.
 
 Run the complete test:
 

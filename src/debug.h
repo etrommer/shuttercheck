@@ -28,8 +28,8 @@ namespace debug {
 #endif
 constexpr uint32_t kDebugChunkInterval = DEBUG_CHUNK_INTERVAL;
 
-// Counts one result that the loop drained from the FIFO, for the ok, stale,
-// clip and weak counters and for the `last` fields.
+// Counts one result that the loop drained from the FIFO, for the ok, stale
+// and weak counters and for the `last` fields.
 void countResult(const scan::Result& result);
 
 // Prints one report when the counter of scanned chunks reaches the interval.
