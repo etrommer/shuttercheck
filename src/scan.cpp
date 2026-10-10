@@ -143,9 +143,10 @@ inline void trackExtremes(State* l, int32_t v) {
 // change nothing but the index are skipped whole. Two disjoint cases (prev
 // is either strictly inside the band, or exactly on a plateau; the band and
 // the plateaus cannot move during either run):
-//  A. prev strictly inside the band -> every strictly-in-band sample is
-//     EMA-excluded and cannot cross: an opening edge needs prev beyond the
-//     dark-side band edge, a stale edge needs prev beyond the light-side one.
+//  A. prev strictly inside the band, on one side of the threshold -> every
+//     strictly-in-band sample on that same side is EMA-excluded and cannot
+//     cross. A run that reaches the threshold (or the other side) is left to
+//     the full path, because it can hold an opening or a stale crossing.
 //     The run's last sample becomes prev; prevInBand stays 1.
 //  B. prev sits exactly on dark or bright -> each equal sample leaves the
 //     EMA at its value (the update is a no-op) and cannot cross. prev and
@@ -165,12 +166,20 @@ inline bool skipQuietRun(State* l, const uint16_t* samples, uint32_t* k,
   // the gate exits on the very first test.
   if (l->prevInBand && l->prev > b.lowEdge && l->prev < b.highEdge &&
       samples[*k] > b.lowEdge && samples[*k] < b.highEdge) {
-    // Case A: run of strictly-in-band samples.
+    // Case A: run of strictly-in-band samples. A run that stays on one side
+    // of the threshold holds no crossing; a run that reaches the threshold
+    // can hold an opening crossing, so it stays on the full path.
     if (b.highEdge >= kFullScale - kClippedMargin) return false;
+    const bool darkSideRun =
+        darkIsHigh<P>() ? (l->prev > b.thr) : (l->prev < b.thr);
+    const bool firstDark =
+        darkIsHigh<P>() ? (samples[*k] > b.thr) : (samples[*k] < b.thr);
+    if (firstDark != darkSideRun) return false;
     uint32_t run = 1;
     while (*k + run < count) {
       int32_t w = samples[*k + run];
       if (w <= b.lowEdge || w >= b.highEdge) break;
+      if ((darkIsHigh<P>() ? (w > b.thr) : (w < b.thr)) != darkSideRun) break;
       ++run;
     }
 #if defined(SHUTTERCHECK_DEBUG)
@@ -218,13 +227,13 @@ inline bool onDarkSide(int32_t v, int32_t thr) {
 
 template <Polarity P>
 inline Crossing detectCrossing(const State& l, int32_t v, const Band& b) {
-  // The re-arm: prev must lie beyond the band edge on the dark side, and the
-  // new sample must reach the threshold on the light side. That is an
-  // opening crossing. `prev` on the dark side of the threshold is redundant:
-  // the band edges sit at thr -+ half with half >= 4, so a prev beyond the
-  // dark-side edge already implies prev beyond the threshold.
-  const bool prevOnDarkSide = darkIsHigh<P>() ? (l.prev >= b.highEdge)
-                                              : (l.prev <= b.lowEdge);
+  // A crossing is a threshold straddle: prev on one side of the threshold,
+  // the new sample on the other. The band must not gate the crossing itself.
+  // If prev had to lie beyond the outer band edge, a slow edge (less than a
+  // band width per sample) would slip through the band unseen, and the
+  // exposure would never register. The band rejects in-band noise through
+  // the two-sample confirmation that follows a crossing, not here.
+  const bool prevOnDarkSide = onDarkSide<P>(l.prev, b.thr);
   const bool vOnLightSide = onLightSide<P>(v, b.thr);
   const Crossing opens = darkIsHigh<P>() ? Crossing::kDown : Crossing::kUp;
   const Crossing closes = darkIsHigh<P>() ? Crossing::kUp : Crossing::kDown;
@@ -237,7 +246,10 @@ inline Crossing detectCrossing(const State& l, int32_t v, const Band& b) {
     const bool vBackOnDark = onDarkSide<P>(v, l.scanThr);
     return (prevPastThr && vBackOnDark) ? closes : Crossing::kNone;
   }
-  // A lone return crossing is reported as stale only after confirmation.
+  // A lone return crossing is reported as stale only after confirmation. The
+  // stale test keeps the band gate: after a pulse the plateaus have not
+  // settled, so a slow edge that already closed the pulse would cross the
+  // moving threshold again and report a second, false stale.
   const bool prevOnLightSide = darkIsHigh<P>() ? (l.prev <= b.lowEdge)
                                                : (l.prev >= b.highEdge);
   const bool vOnDarkSide = onDarkSide<P>(v, b.thr);
