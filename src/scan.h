@@ -92,6 +92,22 @@ struct State {
 #endif
 };
 
+// Threshold and hysteresis geometry of a state, for the host trace tool
+// (issue 32). Read-only: the scan loop does not call it.
+struct Geometry {
+  int32_t threshold;  // Midpoint of the two plateaus.
+  int32_t lowEdge;    // threshold - band/2.
+  int32_t highEdge;   // threshold + band/2.
+  int32_t band;       // Full hysteresis band width.
+  int32_t span;       // Plateau-to-plateau distance, always positive.
+};
+
+// Returns the geometry of `s` under polarity `P`. The definition and the
+// explicit instantiations live in scan.cpp. The linker drops the helper from
+// a build that does not call it.
+template <Polarity P>
+Geometry geometry(const State& s);
+
 void initState(State* s);
 void fifoInit(ResultFifo* f);
 void fifoPush(ResultFifo* f, const Result& r);

@@ -121,6 +121,42 @@ Example lines:
 2.10 s 2 s +5.0%
 ```
 
+## Scan trace
+
+The host trace tool sends an arbitrary ADC stream through the real scan. It needs no board and no firmware build.
+
+`tools/trace_scan.cpp` links `src/scan.cpp`. It reads ADC codes from stdin and calls `scan<P>(&sample, 1, &state, &fifo)` for each sample. It writes one JSON line per sample. The line holds the phase before and after the sample, the plateau and band state, the locked threshold and the results. `scan::Geometry` in `src/scan.h` returns the threshold and band of a state. The scan loop does not call it.
+
+`scripts/trace_scan.py` validates a JSON input, compiles the harness with `${CXX:-c++}` into `.pio/trace_scan/` and writes an SVG. The input is:
+
+```json
+{"polarity": "dark-high", "chunk": 512, "samples": [4000, 4000, 2048]}
+```
+
+`polarity` is `dark-high` or `dark-low`. `chunk` divides the plot; it does not change the scan. The plot has three panels:
+
+1. ADC codes: raw samples, dark and bright EMA, threshold, band and locked threshold.
+2. Phase: one colour for each `ExcursionPhase`.
+3. Results: a bar for each `ok` width, and a mark for each rejection.
+
+The signal panels use a min/max envelope above `--max-points` bins (default 20000). Results and phase changes are always shown. `--check` fails when the trace has no results or an `ok` result has no positive width.
+
+The band figure is a trace of `docs/bands-plot.json`, not a separate drawing:
+
+```sh
+python scripts/trace_scan.py docs/bands-plot.json --out docs/bands-plot.svg
+```
+
+![Scan trace of the band example](bands-plot.svg)
+
+`scripts/trace_test_cases.py` runs every case from `scripts/gen_test_data.py` under both polarities and writes one SVG per case to `test-plots/`. It compares each result with the expectations and fails on a mismatch:
+
+```sh
+python scripts/trace_test_cases.py --out test-plots
+```
+
+CI builds these plots and uploads them as the `scan-trace-plots` artifact. `test-plots/` is gitignored. Both scripts need `matplotlib`; `uv run` installs it from the script metadata.
+
 ## Debug build
 
 The debug build reports capture and scan state over the CDC port. Release builds do not include the debug module or raw-extreme tracking.

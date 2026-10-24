@@ -227,6 +227,33 @@ void test_slow_linear_edge_registers() {
   TEST_ASSERT_TRUE(result.exposureNs > 0);
   TEST_ASSERT_TRUE(!scan::fifoPop(&fifo, &result));
 }
+// The geometry helper used by the host trace must report the same band the
+// scan computes. The expected values are the spec formula for the two
+// plateau layouts.
+void test_geometry_matches_band_formula() {
+  scan::State high{};
+  high.dark = 4000;
+  high.bright = 2048;
+  const scan::Geometry h =
+      scan::geometry<scan::Polarity::kDarkHigh>(high);
+  TEST_ASSERT_EQUAL_INT32(3024, h.threshold);
+  TEST_ASSERT_EQUAL_INT32(2963, h.lowEdge);
+  TEST_ASSERT_EQUAL_INT32(3085, h.highEdge);
+  TEST_ASSERT_EQUAL_INT32(122, h.band);
+  TEST_ASSERT_EQUAL_INT32(1952, h.span);
+
+  scan::State low{};
+  low.dark = 2048;
+  low.bright = 4000;
+  const scan::Geometry l =
+      scan::geometry<scan::Polarity::kDarkLow>(low);
+  TEST_ASSERT_EQUAL_INT32(3024, l.threshold);
+  TEST_ASSERT_EQUAL_INT32(2963, l.lowEdge);
+  TEST_ASSERT_EQUAL_INT32(3085, l.highEdge);
+  TEST_ASSERT_EQUAL_INT32(122, l.band);
+  TEST_ASSERT_EQUAL_INT32(1952, l.span);
+}
+
 void test_case0_clean_1_1000() { runCase(0); }
 void test_case1_clean_1_4000() { runCase(1); }
 void test_case2_crossing_across_chunk() { runCase(2); }
@@ -251,6 +278,7 @@ void runScanTests() {
   RUN_TEST(test_single_sample_dip_does_not_close_open_pulse);
   RUN_TEST(test_single_sample_dip_at_chunk_boundary_is_ignored);
   RUN_TEST(test_slow_linear_edge_registers);
+  RUN_TEST(test_geometry_matches_band_formula);
   RUN_TEST(test_case0_clean_1_1000);
   RUN_TEST(test_case1_clean_1_4000);
   RUN_TEST(test_case2_crossing_across_chunk);

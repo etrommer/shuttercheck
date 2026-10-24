@@ -12,6 +12,17 @@ pio test -e native
 
 PlatformIO generates the gitignored scan-vector header `test/test_data.h` before the build. The binary compiles `src/scan.cpp` and `src/report.cpp` directly and runs both test groups from `test/test_main.cpp`. The scan tests feed the generated cases under both signal polarities and check the results and the rejection behavior. The report tests check the formatted line: the fraction and seconds forms, the nearest speed, the error and the byte budget. Both need no Arduino and no STM32 hardware.
 
+## Scan trace plots
+
+The host trace tool runs the real scan and draws one SVG. It needs no board and no firmware build.
+
+```sh
+python scripts/trace_scan.py docs/bands-plot.json --out docs/bands-plot.svg --check
+python scripts/trace_test_cases.py --out test-plots
+```
+
+The first command draws the example and checks that it has an `ok` result with a positive width. The second command draws one SVG for each generated case and both polarities. It compares the results with `scripts/gen_test_data.py` and fails on a mismatch. `test-plots/` is gitignored. CI builds the test-case plots and uploads them as the `scan-trace-plots` artifact. The scripts need `matplotlib`. See [DEVELOPER.md](DEVELOPER.md#scan-trace) for the input format and the panel meanings.
+
 ## On-device self test
 
 The self-test checks the clock tree, capture start, USB CDC, generated scan cases, and the real ADC/DMA path. The scan cases run in both polarities. The ADC section generates pulses on PA0 and measures them through the capture path on PA1.

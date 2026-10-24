@@ -38,6 +38,8 @@ rules only: workflow, layout, commands, platform facts, invariants.
   new side, but keeps the first crossing time for interpolation. Pure integer,
   stdint only, free of HAL and Arduino: the native unit tests compile it
   directly. Keep it separate from reporting so the scan timing stays obvious.
+  `scan.h` also exposes `scan::Geometry`, a read-only threshold and band view
+  for the host trace. The scan loop does not call it.
 - `src/report.cpp` / `src/report.h` — the report line (issue 28): the measured
   speed, the nearest common shutter speed and the error of the measurement
   against it. Presentation only: pure integer, stdint only, free of HAL and
@@ -70,6 +72,19 @@ rules only: workflow, layout, commands, platform facts, invariants.
   covers the debug fields of the scan too. `printf` of this toolchain has no
   long long width: `%lld` prints `ld`, so `debug.cpp` formats 64-bit values
   itself. Never use `%lld` here.
+- `tools/trace_scan.cpp` — the host trace harness (issue 32). It links the real
+  `src/scan.cpp`, reads ADC codes from stdin and writes one JSON line per
+  sample. It calls `scan()` one sample at a time; the scan has no
+  chunk-dependent state. Host-only, free of HAL and Arduino.
+- `scripts/trace_scan.py` — validates a JSON sample stream, compiles the
+  harness into `.pio/trace_scan/` and draws the samples, plateaus, band, phase
+  and results in one SVG. `docs/bands-plot.json` and `docs/bands-plot.svg` are
+  its example. `--check` fails when the trace has no results or an `ok` result
+  has no positive width.
+- `scripts/trace_test_cases.py` — runs every generated case in both
+  polarities, compares the results with `scripts/gen_test_data.py` and writes
+  `test-plots/caseNN-*.svg`. CI uploads the plots. The directory is
+  gitignored.
 - `test/scan_cases.h` — feeds one generated case through the scan and records
   what came out. Free of Unity and of the HAL, so `test/test_scan.cpp`
   (native, asserts with Unity) and `src/selfcheck.cpp` (on device, prints
@@ -95,6 +110,8 @@ rules only: workflow, layout, commands, platform facts, invariants.
 ```sh
 pio run                      # build
 pio test -e native           # native scan and report unit tests (always with SHUTTERCHECK_DEBUG)
+python scripts/trace_scan.py docs/bands-plot.json --out docs/bands-plot.svg  # trace one stream
+python scripts/trace_test_cases.py --out test-plots  # plots for all generated cases
 pio run -t upload            # flash (ST-Link over SWD)
 pio run -t clean
 pio device monitor           # read reports on the USB CDC port
@@ -156,13 +173,16 @@ pio run -e debug -t upload  # flash it
    so dark → high voltage at PA1, light → low (V_bias). The shutter opens on
    the crossing that leaves the dark plateau.
 10. One short flash on PB12 per accepted sample; nothing on rejection.
+11. `scan::Geometry` is read-only. The scan loop does not call it, and no trace
+    code enters release firmware.
 
 ## Verification policy
 
 Use CI and unit tests for hardware-independent work (compilation, arithmetic).
-Validate hardware-dependent work _on hardware_: check for a suitable board, and
-stop and ask how to proceed if none is found. Define the expected outcome
-first, either in the issue or as a test.
+The scan trace tools are host-only: CI compiles them and builds the test-case
+plots. Validate hardware-dependent work _on hardware_: check for a suitable
+board, and stop and ask how to proceed if none is found. Define the expected
+outcome first, either in the issue or as a test.
 
 `python scripts/on_device_test.py` is the hardware regression test: it flashes
 the `on_device_test` environment, reads the report and exits non-zero on a

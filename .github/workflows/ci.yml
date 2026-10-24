@@ -48,3 +48,18 @@ jobs:
         run: |
           python scripts/gen_test_data.py
           pio test -e native
+      - name: Install plot dependency
+        run: pip install matplotlib
+      - name: Scan trace smoke test
+        run: |
+          python scripts/trace_scan.py docs/bands-plot.json --out /tmp/bands-plot.svg --check
+          test -s /tmp/bands-plot.svg
+      - name: Build test-case plots
+        run: python scripts/trace_test_cases.py --out test-plots
+      - name: Upload test-case plots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-trace-plots
+          path: test-plots/*.svg
+          if-no-files-found: warn

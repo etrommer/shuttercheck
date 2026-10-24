@@ -292,6 +292,13 @@ void initState(State* s) { *s = State{}; }
 void fifoInit(ResultFifo* f) { f->head = 0; f->tail = 0; }
 
 template <Polarity P>
+Geometry geometry(const State& s) {
+  const Band b = bandOf<P>(s);
+  return Geometry{b.thr, b.lowEdge, b.highEdge, currentBand<P>(s),
+                  plateauSpan<P>(s)};
+}
+
+template <Polarity P>
 void scan(const uint16_t* samples, uint32_t count, State* s,
           ResultFifo* fifo) {
   // Hoist the state into a local struct for the whole chunk. The compiler
@@ -431,6 +438,9 @@ template void scan<Polarity::kDarkHigh>(const uint16_t*, uint32_t, State*,
                                        ResultFifo*);
 template void scan<Polarity::kDarkLow>(const uint16_t*, uint32_t, State*,
                                       ResultFifo*);
+
+template Geometry geometry<Polarity::kDarkHigh>(const State&);
+template Geometry geometry<Polarity::kDarkLow>(const State&);
 
 void fifoPush(ResultFifo* f, const Result& r) {
   // Single-producer (scan, in the DMA callback) single-consumer (loop). Drop
