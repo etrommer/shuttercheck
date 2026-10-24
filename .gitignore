@@ -2,3 +2,5 @@
 .vscode/
 compile_commands.json
 test/test_data.h
+test-plots/
+__pycache__/
